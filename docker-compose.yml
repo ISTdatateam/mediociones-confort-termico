@@ -1,0 +1,59 @@
+version: '3.8'
+services:
+
+  database-higiene:
+    image: mysql:8.0
+    container_name: bd-higiene
+    ports:
+      - 3335:3306
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - ./mysql:/var/lib/mysql
+    networks:
+      - db_network
+
+  higiene-app:
+    container_name: higiene-app
+    restart: always
+    build: .
+    #ports: .
+    #  - "8501:8501"
+    networks:
+      - db_network
+      - web_network
+    depends_on:
+      - database-higiene
+    volumes:
+      - ./.streamlit:/usr/src/app/.streamlit
+      - ./assets:/usr/src/app/assets
+      - .:/usr/src/app
+      - ./.streamlit/config.toml:/root/.streamlit/config.toml
+      - ./imagenes_pdf:/usr/src/app/imagenes_pdf
+      - ./imagenes-firma:/usr/src/app/imagenes-firma
+
+
+
+  nginx-higiene:
+    container_name: nginx-higiene
+    restart: always
+    image: "nginx:latest"
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx:/etc/nginx/conf.d
+    networks:
+      - web_network
+    depends_on:
+      - higiene-app
+
+networks:
+  db_network:
+    driver: bridge
+  web_network:
+    driver: bridge
