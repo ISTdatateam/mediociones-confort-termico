@@ -239,11 +239,11 @@ def main():
                                                              key=f"vestimenta_{i}")
 
                         # Mediciones
-                        t_bul_seco = st.number_input(f"Temp. bulbo seco (°C) {i}", step=0.1,
+                        t_bul_seco = st.number_input(f"Temp. bulbo seco (°C) {i}", value=None,step=0.1,
                                                      key=f"tbs_{i}")
-                        t_globo = st.number_input(f"Temp. globo (°C) {i}", step=0.1, key=f"tg_{i}")
-                        hum_rel = st.number_input(f"Humedad relativa (%) {i}", step=0.1, key=f"hr_{i}")
-                        vel_air = st.number_input(f"Velocidad del aire (m/s) {i}", step=0.1,
+                        t_globo = st.number_input(f"Temp. globo (°C) {i}", value=None, step=0.1, key=f"tg_{i}")
+                        hum_rel = st.number_input(f"Humedad relativa (%) {i}",value=None, step=0.1, key=f"hr_{i}")
+                        vel_air = st.number_input(f"Velocidad del aire (m/s) {i}",Value=None, step=0.1,
                                                   key=f"vel_aire_{i}")
 
                         # Cálculo de PMV y PPD
