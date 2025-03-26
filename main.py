@@ -249,12 +249,6 @@ def main():
                         # Cálculo de PMV y PPD
                         met = get_met(puesto_trabajo)  # Puede depender del puesto de trabajo
                         clo = 0.5 if vestimenta_trabajador == "Habitual" else 1.0
-                        resultados = pmv_ppd_iso(tdb=t_bul_seco, tr=t_globo, vr=vel_air, rh=hum_rel,
-                                                 met=met, clo=clo,
-                                                 model="7730-2005", limit_inputs=False)
-                        pmv = resultados.pmv
-                        ppd = resultados.ppd
-                        resultado_medicion = check_resultado_pmv(pmv)
 
                         # Condiciones y observaciones
                         cond_techumbre = st.radio(f"Techumbre aislante {i}", ["Sí", "No"],
@@ -308,6 +302,12 @@ def main():
 
                         # Guardar medición
                         if st.form_submit_button(f"Guardar Área {i}"):
+                            resultados = pmv_ppd_iso(tdb=t_bul_seco, tr=t_globo, vr=vel_air, rh=hum_rel,
+                                                     met=met, clo=clo,
+                                                     model="7730-2005", limit_inputs=False)
+                            pmv = resultados.pmv
+                            ppd = resultados.ppd
+                            resultado_medicion = check_resultado_pmv(pmv)
                             # Solo insertar si todos los datos están completos
                             if nombre_area != "Seleccione..." and sector_especifico != "Seleccione..." and puesto_trabajo != "Seleccione..." and posicion_trabajador != "Seleccione...":
                                 id_medicion = insertar_medicion(id_visita, nombre_area,
