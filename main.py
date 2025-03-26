@@ -243,7 +243,7 @@ def main():
                                                      key=f"tbs_{i}")
                         t_globo = st.number_input(f"Temp. globo (°C) {i}", value=None, step=0.1, key=f"tg_{i}")
                         hum_rel = st.number_input(f"Humedad relativa (%) {i}",value=None, step=0.1, key=f"hr_{i}")
-                        vel_air = st.number_input(f"Velocidad del aire (m/s) {i}",Value=None, step=0.1,
+                        vel_air = st.number_input(f"Velocidad del aire (m/s) {i}",value=None, step=0.1,
                                                   key=f"vel_aire_{i}")
 
                         # Cálculo de PMV y PPD
