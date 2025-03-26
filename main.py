@@ -107,7 +107,7 @@ def main():
 
         st.write("")
         st.markdown("---")
-        # formulario 1: Visita - datos visita + calibración inicial
+        # Formulario 1: Visita - datos visita + calibración inicial
         with st.form("visita_data_inicio"):
             # 2: Inicio
             st.subheader("Datos de la visita")
