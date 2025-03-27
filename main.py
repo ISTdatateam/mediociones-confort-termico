@@ -344,9 +344,9 @@ def main():
         # 4: Cierre
         st.subheader("Cierre")
         with st.form("visita_data_cierre"):
-            verif_tbs_final = st.number_input("Verificación TBS inicial", value=None, step=0.1)
-            verif_tbh_final = st.number_input("Verificación TBH inicial", value=None, step=0.1)
-            verif_tg_final = st.number_input("Verificación TG inicial", value=None, step=0.1)
+            verif_tbs_final = st.number_input("Verificación TBS final", value=None, step=0.1)
+            verif_tbh_final = st.number_input("Verificación TBH final", value=None, step=0.1)
+            verif_tg_final = st.number_input("Verificación TG final", value=None, step=0.1)
             comentarios_finales = st.text_area("Comentarios finales de evaluación", max_chars=1000)
 
 

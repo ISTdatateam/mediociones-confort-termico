@@ -17,6 +17,7 @@ import os
 from natsort import natsorted
 from collections import OrderedDict
 from datetime import datetime, date
+import pandas as pd
 
 # Configuración básica del logging
 # logging.basicConfig(level=logging.INFO)
@@ -1391,11 +1392,27 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
         # Usar el primer registro del grupo para extraer los datos de instalación
         registro = group.iloc[0]
 
-        # Agregar una fila para el área con sus respectivos datos
+        # Definir los campos que se concatenarán para cada resultado
+        campos_constructivas = ["obs_paredes", "obs_paredes", "obs_ventanal", "obs_otras"]
+        campos_aire = ["obs_aire_acond", "obs_ventiladores", "obs_inyeccion_extraccion", "obs_ventanas", "obs_puertas"]
+
+        # Concatenar para 'caract_constructivas': se ignoran los valores NaN
+        valores_constructivas = [
+            str(registro[campo]) for campo in campos_constructivas if pd.notna(registro[campo])
+        ]
+        caract_constructivas = ", ".join(valores_constructivas)
+
+        # Concatenar para 'ingreso_salida_aire': se ignoran los valores NaN
+        valores_aire = [
+            str(registro[campo]) for campo in campos_aire if pd.notna(registro[campo])
+        ]
+        ingreso_salida_aire = ", ".join(valores_aire)
+
+        # Agregar una fila para el área con sus respectivos datos concatenados
         row_cells = tabla_caract.add_row().cells
         row_cells[0].text = area
-        row_cells[1].text = str(registro["caract_constructivas"])
-        row_cells[2].text = str(registro["ingreso_salida_aire"])
+        row_cells[1].text = caract_constructivas
+        row_cells[2].text = ingreso_salida_aire
 
     set_column_width(tabla_caract, 0, Cm(3))
     set_column_width(tabla_caract, 1, Cm(7))

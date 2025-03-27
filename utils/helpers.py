@@ -8,7 +8,6 @@ from streamlit_cookies_controller import CookieController
 import logging
 import pandas as pd
 
-cookie_controller = CookieController()
 
 def validar_rut(rut):
     pass
@@ -30,6 +29,7 @@ def make_sidebar():
             st.write(f"👋 Hola, {st.session_state['data_user']['name']}!")
 
             if st.button("Cerrar sesión"):
+                cookie_controller = CookieController()
                 cookie_controller.set("user_data", "", max_age=0)
                 # cookie_controller.remove("user_data")
                 st.session_state["data_user"] = None
@@ -43,6 +43,7 @@ def make_sidebar():
 
 
 def logout():
+    cookie_controller = CookieController()
     cookie_controller.set("user_data", "", max_age=0)
     #cookie_controller.remove("user_data")
     del st.session_state["data_user"]
@@ -67,6 +68,7 @@ def login(username, password):
 
 # Checkear sesión al inicio
 def check_session():
+    cookie_controller = CookieController()
     #st.write("check de cookie")
     user_data = cookie_controller.get("user_data")
     #st.write(cookie_controller.get("user_data"))
@@ -213,13 +215,13 @@ def guardar_visita_inicio(visita_data):
          nombre_personal_visita, cargo_personal_visita, consultor_ist, equipo_temp, equipo_vel_air,
          patron_tbs, ver_tbs_ini, patron_tbh, ver_tbh_ini, patron_tg, ver_tg_ini) = visita_data
         # paso 1: Obtener datos consultor
-        query_user = "SELECT cargo, zonal FROM usuarios WHERE email = %s"
+        query_user = "SELECT name, cargo, zonal FROM usuarios WHERE email = %s"
         db.cursor.execute(query_user, (consultor_ist,))
         user_row = db.cursor.fetchone()
         if not user_row:
             logging.error("No se encontró el usuario con email %s", consultor_ist)
             return None
-        consultor_cargo, consultor_zonal = user_row['cargo'], user_row['zonal']
+        consultor_name, consultor_cargo, consultor_zonal = user_row['name'], user_row['cargo'], user_row['zonal']
 
         # paso2: Obtener el id del equipo de temperatura
         query_equipo_temp = "SELECT id_equipo FROM equipos_medicion WHERE equipo_dicc = %s"
@@ -270,7 +272,7 @@ def guardar_visita_inicio(visita_data):
             motivo_evaluacion,
             nombre_personal_visita,
             cargo_personal_visita,
-            consultor_ist,
+            consultor_name,
             id_equipo_temp,
             id_equipo_vel,
             patron_tbs,
