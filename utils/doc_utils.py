@@ -1265,7 +1265,7 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
 
     if not df_visitas.empty:
         row_visita = df_visitas.iloc[0]
-        consultor_ist = row_visita.get("consultor_ist", "")
+        consultor_ist = row_visita.get("consultor_nombre", "")
         consultor_cargo = row_visita.get("consultor_cargo", "")
         consultor_zonal = row_visita.get("consultor_zonal", "")
 
@@ -1386,29 +1386,57 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
     hdr_cells[1].text = "Características constructivas"
     hdr_cells[2].text = "Condiciones de ventilación"
 
-    # Agrupar el DataFrame por "nombre_area"
+    # Cambio caracteristicas constructivas
+    # Diccionario actualizado con frases base
+    condiciones = {
+        "cond_techumbre": "cuenta con techumbre aislante",
+        "cond_paredes": "cuenta con paredes aislantes",
+        "cond_vantanal": "cuenta con ventanas aislantes",
+        "cond_aire_acond": "cuenta con aire acondicionado",
+        "cond_ventiladores": "cuenta con ventiladores",
+        "cond_inyeccion_extraccion": "cuenta con sistema de inyección/extracción",
+        "cond_ventanas": "tiene ventanas abiertas",
+        "cond_puertas": "tiene puertas abiertas",
+        "cond_otras": "existen otras condiciones generadoras de disconfort térmico"
+    }
+
     grouped = df_mediciones.groupby("nombre_area")
     for area, group in grouped:
-        # Usar el primer registro del grupo para extraer los datos de instalación
         registro = group.iloc[0]
 
-        # Definir los campos que se concatenarán para cada resultado
-        campos_constructivas = ["obs_paredes", "obs_paredes", "obs_ventanal", "obs_otras"]
-        campos_aire = ["obs_aire_acond", "obs_ventiladores", "obs_inyeccion_extraccion", "obs_ventanas", "obs_puertas"]
-
-        # Concatenar para 'caract_constructivas': se ignoran los valores NaN
-        valores_constructivas = [
-            str(registro[campo]) for campo in campos_constructivas if pd.notna(registro[campo])
+        campos_constructivas = [
+            "cond_techumbre", "obs_techumbre", "cond_paredes", "obs_paredes",
+            "cond_vantanal", "obs_ventanal", "cond_otras", "obs_otras"
         ]
-        caract_constructivas = ", ".join(valores_constructivas)
-
-        # Concatenar para 'ingreso_salida_aire': se ignoran los valores NaN
-        valores_aire = [
-            str(registro[campo]) for campo in campos_aire if pd.notna(registro[campo])
+        campos_aire = [
+            "cond_aire_acond", "obs_aire_acond", "cond_ventiladores", "obs_ventiladores",
+            "cond_inyeccion_extraccion", "obs_inyeccion_extraccion", "cond_ventanas",
+            "cond_puertas", "obs_ventanas", "obs_puertas"
         ]
-        ingreso_salida_aire = ", ".join(valores_aire)
 
-        # Agregar una fila para el área con sus respectivos datos concatenados
+        def procesar_campos(campos):
+            resultado = []
+            for campo in campos:
+                valor = registro[campo]
+                # Se filtra si el valor es nulo o está vacío (o solo espacios)
+                if pd.notna(valor) and str(valor).strip() != "":
+                    valor_str = str(valor).strip()
+                    # Si el campo está en condiciones, es numérico (0 o 1) y se convierte a "No"/"Si"
+                    if campo in condiciones:
+                        if valor_str == "0":
+                            valor_str = "No"
+                        elif valor_str == "1":
+                            valor_str = "Si"
+                        # Se concatena la frase predefinida
+                        resultado.append(f"{valor_str} {condiciones[campo]}")
+                    else:
+                        # Para campos observación, se conserva el texto tal cual
+                        resultado.append(valor_str)
+            return ", ".join(resultado)
+
+        caract_constructivas = procesar_campos(campos_constructivas)
+        ingreso_salida_aire = procesar_campos(campos_aire)
+
         row_cells = tabla_caract.add_row().cells
         row_cells[0].text = area
         row_cells[1].text = caract_constructivas

@@ -95,10 +95,26 @@ def get_visita(id_visita):
     db = MySQLDatabaseManager()
     try:
         query = """
-                SELECT * FROM visitas
-                WHERE id_visita = %s
+            SELECT v.*, u.name AS consultor_nombre
+            FROM visitas v
+            JOIN usuarios u ON v.consultor_ist = u.email
+            WHERE v.id_visita = %s
             """
         db.cursor.execute(query, (id_visita,))
+        resultados = db.cursor.fetchall()
+        return pd.DataFrame(resultados)
+    finally:
+        db.close()
+
+def get_visitas_por_cuv(cuv):
+    db = MySQLDatabaseManager()
+    try:
+        query = """
+            SELECT * FROM visitas
+            WHERE cuv_visita = %s
+            ORDER BY fecha_visita DESC
+        """
+        db.cursor.execute(query, (int(cuv),))
         resultados = db.cursor.fetchall()
         return pd.DataFrame(resultados)
     finally:
@@ -272,7 +288,7 @@ def guardar_visita_inicio(visita_data):
             motivo_evaluacion,
             nombre_personal_visita,
             cargo_personal_visita,
-            consultor_name,
+            consultor_ist,
             id_equipo_temp,
             id_equipo_vel,
             patron_tbs,
@@ -527,6 +543,3 @@ def comparar_patron(data_patron_medicion, equipo_dicc):
         return {"error": str(e)}
     finally:
         db.close()
-
-
-
