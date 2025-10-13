@@ -313,6 +313,93 @@ def guardar_visita_inicio(visita_data):
         db.close()
 
 
+def actualizar_visita_inicio(id_visita, visita_data):
+    db = MySQLDatabaseManager()
+    try:
+        (cuv_visita, fecha_visita, hora_visita, temperatura_dia, motivo_evaluacion,
+         nombre_personal_visita, cargo_personal_visita, consultor_ist, equipo_temp, equipo_vel_air,
+         patron_tbs, ver_tbs_ini, patron_tbh, ver_tbh_ini, patron_tg, ver_tg_ini) = visita_data
+
+        query_user = "SELECT name, cargo, zonal FROM usuarios WHERE email = %s"
+        db.cursor.execute(query_user, (consultor_ist,))
+        user_row = db.cursor.fetchone()
+        if not user_row:
+            logging.error("No se encontró el usuario con email %s", consultor_ist)
+            return False
+        consultor_name, consultor_cargo, consultor_zonal = user_row['name'], user_row['cargo'], user_row['zonal']
+
+        query_equipo_temp = "SELECT id_equipo FROM equipos_medicion WHERE equipo_dicc = %s"
+        db.cursor.execute(query_equipo_temp, (equipo_temp,))
+        row_temp = db.cursor.fetchone()
+        if not row_temp:
+            logging.error("No se encontró el equipo de temperatura con equipo_dicc %s", equipo_temp)
+            return False
+        id_equipo_temp = row_temp['id_equipo']
+
+        query_equipo_vel = "SELECT id_equipo FROM equipos_medicion WHERE equipo_dicc = %s"
+        db.cursor.execute(query_equipo_vel, (equipo_vel_air,))
+        row_vel = db.cursor.fetchone()
+        if not row_vel:
+            logging.error("No se encontró el equipo de velocidad con equipo_dicc %s", equipo_vel_air)
+            return False
+        id_equipo_vel = row_vel['id_equipo']
+
+        query = """
+            UPDATE visitas
+            SET cuv_visita = %s,
+                fecha_visita = %s,
+                hora_visita = %s,
+                temperatura_dia = %s,
+                motivo_evaluacion = %s,
+                nombre_personal_visita = %s,
+                cargo_personal_visita = %s,
+                consultor_ist = %s,
+                equipo_temp = %s,
+                equipo_vel_air = %s,
+                patron_tbs = %s,
+                ver_tbs_ini = %s,
+                patron_tbh = %s,
+                ver_tbh_ini = %s,
+                patron_tg = %s,
+                ver_tg_ini = %s,
+                consultor_cargo = %s,
+                consultor_zonal = %s
+            WHERE id_visita = %s
+        """
+
+        params = (
+            cuv_visita,
+            fecha_visita,
+            hora_visita,
+            temperatura_dia,
+            motivo_evaluacion,
+            nombre_personal_visita,
+            cargo_personal_visita,
+            consultor_ist,
+            id_equipo_temp,
+            id_equipo_vel,
+            patron_tbs,
+            ver_tbs_ini,
+            patron_tbh,
+            ver_tbh_ini,
+            patron_tg,
+            ver_tg_ini,
+            consultor_cargo,
+            consultor_zonal,
+            id_visita
+        )
+
+        db.cursor.execute(query, params)
+        db.connection.commit()
+        return True
+
+    except Exception as e:
+        logging.error(f"Error al actualizar la visita: {e}")
+        return False
+    finally:
+        db.close()
+
+
 def guardar_visita_cierre(id_visita, dato_cierre):
     query = """
         UPDATE visitas
@@ -436,6 +523,112 @@ def insertar_medicion(
         return None
     finally:
         db.close()
+
+
+def actualizar_medicion(
+                        id_medicion,
+                        nombre_area,
+                        sector_especifico,
+                        puesto_trabajo, posicion_trabajador,
+                        vestimenta_trabajador, t_bul_seco,
+                        t_globo, hum_rel,
+                        vel_air, ppd, pmv,
+                        resultado_medicion, cond_techumbre,
+                        obs_techumbre,
+                        cond_paredes, obs_paredes,
+                        cond_vantanal, obs_ventanal,
+                        cond_aire_acond,
+                        obs_aire_acond, cond_ventiladores,
+                        obs_ventiladores,
+                        cond_inyeccion_extraccion,
+                        obs_inyeccion_extraccion, cond_ventanas,
+                        obs_ventanas, cond_puertas, obs_puertas,
+                        cond_otras, obs_otras, met, clo):
+    db = MySQLDatabaseManager()
+    try:
+        query = """
+            UPDATE mediciones
+            SET nombre_area = %s,
+                sector_especifico = %s,
+                puesto_trabajo = %s,
+                posicion_trabajador = %s,
+                vestimenta_trabajador = %s,
+                t_bul_seco = %s,
+                t_globo = %s,
+                hum_rel = %s,
+                vel_air = %s,
+                ppd = %s,
+                pmv = %s,
+                resultado_medicion = %s,
+                cond_techumbre = %s,
+                obs_techumbre = %s,
+                cond_paredes = %s,
+                obs_paredes = %s,
+                cond_vantanal = %s,
+                obs_ventanal = %s,
+                cond_aire_acond = %s,
+                obs_aire_acond = %s,
+                cond_ventiladores = %s,
+                obs_ventiladores = %s,
+                cond_inyeccion_extraccion = %s,
+                obs_inyeccion_extraccion = %s,
+                cond_ventanas = %s,
+                obs_ventanas = %s,
+                cond_puertas = %s,
+                obs_puertas = %s,
+                cond_otras = %s,
+                obs_otras = %s,
+                met = %s,
+                clo = %s
+            WHERE id_medicion = %s
+        """
+
+        params = (
+            nombre_area,
+            sector_especifico,
+            puesto_trabajo,
+            posicion_trabajador,
+            vestimenta_trabajador,
+            t_bul_seco,
+            t_globo,
+            hum_rel,
+            vel_air,
+            float(ppd),
+            float(pmv),
+            resultado_medicion,
+            cond_techumbre,
+            obs_techumbre,
+            cond_paredes,
+            obs_paredes,
+            cond_vantanal,
+            obs_ventanal,
+            cond_aire_acond,
+            obs_aire_acond,
+            cond_ventiladores,
+            obs_ventiladores,
+            cond_inyeccion_extraccion,
+            obs_inyeccion_extraccion,
+            cond_ventanas,
+            obs_ventanas,
+            cond_puertas,
+            obs_puertas,
+            cond_otras,
+            obs_otras,
+            met,
+            clo,
+            id_medicion
+        )
+
+        db.cursor.execute(query, params)
+        db.connection.commit()
+        return True
+
+    except Exception as e:
+        logging.error(f"Error al actualizar la medición: {e}")
+        return False
+    finally:
+        db.close()
+
 
 def get_areas_options():
     db = MySQLDatabaseManager()
