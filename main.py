@@ -6,10 +6,12 @@ import os
 import io
 from dotenv import load_dotenv
 from streamlit_cookies_controller import CookieController
-from utils.helpers import autenticar_usuario, get_ct, precompletar_campos_ct, interpreter_pmv, get_cuv, \
-    guardar_visita_inicio, guardar_visita_cierre, logout, insertar_medicion, get_met, check_resultado_pmv, \
-    get_areas_options, get_motivo_eval, get_equipo_vel, get_equipo_temp, get_sector_especifico, get_puesto_trabajo, \
-    get_posicion_trabajador, get_vestimenta_trabajador, comparar_patron
+from utils.helpers import (autenticar_usuario, get_ct, precompletar_campos_ct, interpreter_pmv, get_cuv,
+                           guardar_visita_inicio, guardar_visita_cierre, logout, insertar_medicion, get_met,
+                           check_resultado_pmv, get_areas_options, get_motivo_eval, get_equipo_vel, get_equipo_temp,
+                           get_sector_especifico, get_puesto_trabajo, get_posicion_trabajador,
+                           get_vestimenta_trabajador, comparar_patron, get_visitas_por_cuv, get_visita,
+                           get_mediciones, actualizar_visita_inicio, actualizar_medicion, get_equipo_dicc_por_id)
 from pythermalcomfort.models import pmv_ppd_iso
 from utils.informe import generar_informe
 
@@ -25,6 +27,161 @@ if "data_user" not in st.session_state:
 # Cargar variables de entorno desde un archivo .env
 load_dotenv()
 
+
+
+def reset_visita_context():
+    """Limpiar los datos asociados a una visita en el session_state."""
+    st.session_state["id_visita"] = None
+    st.session_state["modo_edicion"] = False
+    st.session_state["visita_prefill"] = {}
+    st.session_state["cierre_prefill"] = {}
+    st.session_state["mediciones_ids"] = {}
+    st.session_state["areas_data"] = {}
+    st.session_state.pop("cierre", None)
+    st.session_state.pop("visita_finalizada", None)
+    st.session_state.pop("visita_a_cargar", None)
+    st.session_state.pop("prefill_ready", None)
+    st.session_state.pop("visita_seleccionada", None)
+    st.session_state["visitas_disponibles"] = pd.DataFrame()
+
+    for i in range(1, 11):
+        st.session_state.pop(f"area_sector_{i}", None)
+        st.session_state.pop(f"espec_sector_{i}", None)
+        st.session_state.pop(f"puesto_trabajo_{i}", None)
+        st.session_state.pop(f"pos_trabajador_{i}", None)
+        st.session_state.pop(f"vestimenta_{i}", None)
+        st.session_state.pop(f"tbs_{i}", None)
+        st.session_state.pop(f"tg_{i}", None)
+        st.session_state.pop(f"hr_{i}", None)
+        st.session_state.pop(f"vel_aire_{i}", None)
+        st.session_state.pop(f"techumbre_{i}", None)
+        st.session_state.pop(f"obs_techumbre_{i}", None)
+        st.session_state.pop(f"paredes_{i}", None)
+        st.session_state.pop(f"obs_paredes_{i}", None)
+        st.session_state.pop(f"ventanales_{i}", None)
+        st.session_state.pop(f"obs_ventanales_{i}", None)
+        st.session_state.pop(f"aire_acond_{i}", None)
+        st.session_state.pop(f"obs_aire_acond_{i}", None)
+        st.session_state.pop(f"ventiladores_{i}", None)
+        st.session_state.pop(f"obs_ventiladores_{i}", None)
+        st.session_state.pop(f"inyeccion_extrac_{i}", None)
+        st.session_state.pop(f"obs_inyeccion_{i}", None)
+        st.session_state.pop(f"ventanas_{i}", None)
+        st.session_state.pop(f"obs_ventanas_{i}", None)
+        st.session_state.pop(f"puertas_{i}", None)
+        st.session_state.pop(f"obs_puertas_{i}", None)
+        st.session_state.pop(f"otras_{i}", None)
+        st.session_state.pop(f"obs_otras_{i}", None)
+
+    st.session_state["cod_equipo_t"] = "Seleccione..."
+    st.session_state["cod_equipo_v"] = "Seleccione..."
+
+
+def preparar_nueva_visita():
+    reset_visita_context()
+    st.session_state["status_message"] = "Formulario listo para registrar una nueva visita."
+    st.rerun()
+
+
+def cargar_visita_existente(id_visita):
+    visita_df = get_visita(id_visita)
+    if visita_df.empty:
+        st.session_state["status_message"] = "No se encontraron datos para la visita seleccionada."
+        st.rerun()
+        return
+
+    visita = visita_df.iloc[0].to_dict()
+
+    fecha_visita = visita.get("fecha_visita")
+    if isinstance(fecha_visita, str):
+        fecha_visita = datetime.strptime(fecha_visita, "%Y-%m-%d").date()
+
+    hora_visita = visita.get("hora_visita")
+    if isinstance(hora_visita, str):
+        hora_visita = datetime.strptime(hora_visita, "%H:%M:%S").time()
+
+    equipo_temp = get_equipo_dicc_por_id(visita.get("equipo_temp")) or "Seleccione..."
+    equipo_vel = get_equipo_dicc_por_id(visita.get("equipo_vel_air")) or "Seleccione..."
+
+    st.session_state["id_visita"] = id_visita
+    st.session_state["modo_edicion"] = True
+    st.session_state["visita_prefill"] = {
+        "fecha_visita": fecha_visita or date.today(),
+        "hora_visita": hora_visita or dt_time(hour=9, minute=0),
+        "temperatura_dia": float(visita.get("temperatura_dia") or 25.0),
+        "motivo_evaluacion": visita.get("motivo_evaluacion", ""),
+        "nombre_personal_visita": visita.get("nombre_personal_visita", ""),
+        "cargo_personal_visita": visita.get("cargo_personal_visita", ""),
+        "consultor_ist": visita.get("consultor_ist", ""),
+        "equipo_temp": equipo_temp,
+        "equipo_vel_air": equipo_vel,
+        "patron_tbs": visita.get("patron_tbs") if visita.get("patron_tbs") is not None else 46.4,
+        "ver_tbs_ini": visita.get("ver_tbs_ini"),
+        "patron_tbh": visita.get("patron_tbh") if visita.get("patron_tbh") is not None else 12.7,
+        "ver_tbh_ini": visita.get("ver_tbh_ini"),
+        "patron_tg": visita.get("patron_tg") if visita.get("patron_tg") is not None else 69.8,
+        "ver_tg_ini": visita.get("ver_tg_ini"),
+    }
+
+    st.session_state["cod_equipo_t"] = equipo_temp
+    st.session_state["cod_equipo_v"] = equipo_vel
+
+    cierre_prefill = {
+        "ver_tbs_fin": visita.get("ver_tbs_fin"),
+        "ver_tbh_fin": visita.get("ver_tbh_fin"),
+        "ver_tg_fin": visita.get("ver_tg_fin"),
+        "note_visita": visita.get("note_visita", ""),
+    }
+    st.session_state["cierre_prefill"] = cierre_prefill
+
+    if all(value is not None for key, value in cierre_prefill.items() if key != "note_visita"):
+        st.session_state["cierre"] = {
+            "Verificación TBS final": cierre_prefill["ver_tbs_fin"],
+            "Verificación TBH final": cierre_prefill["ver_tbh_fin"],
+            "Verificación TG final": cierre_prefill["ver_tg_fin"],
+            "Comentarios finales de evaluación": cierre_prefill["note_visita"],
+        }
+    else:
+        st.session_state.pop("cierre", None)
+
+    mediciones_df = get_mediciones(id_visita)
+    st.session_state["mediciones_ids"] = {}
+    st.session_state["areas_data"] = {}
+    for idx, medicion in enumerate(mediciones_df.to_dict("records")):
+        st.session_state["mediciones_ids"][idx] = medicion.get("id_medicion")
+        st.session_state["areas_data"][idx] = medicion
+        form_idx = idx + 1
+        st.session_state[f"area_sector_{form_idx}"] = medicion.get("nombre_area", "Seleccione...")
+        st.session_state[f"espec_sector_{form_idx}"] = medicion.get("sector_especifico", "Seleccione...")
+        st.session_state[f"puesto_trabajo_{form_idx}"] = medicion.get("puesto_trabajo", "Seleccione...")
+        st.session_state[f"pos_trabajador_{form_idx}"] = medicion.get("posicion_trabajador", "Seleccione...")
+        st.session_state[f"vestimenta_{form_idx}"] = medicion.get("vestimenta_trabajador", "Seleccione...")
+        st.session_state[f"tbs_{form_idx}"] = medicion.get("t_bul_seco")
+        st.session_state[f"tg_{form_idx}"] = medicion.get("t_globo")
+        st.session_state[f"hr_{form_idx}"] = medicion.get("hum_rel")
+        st.session_state[f"vel_aire_{form_idx}"] = medicion.get("vel_air")
+        st.session_state[f"techumbre_{form_idx}"] = "Sí" if medicion.get("cond_techumbre") else "No"
+        st.session_state[f"obs_techumbre_{form_idx}"] = medicion.get("obs_techumbre", "")
+        st.session_state[f"paredes_{form_idx}"] = "Sí" if medicion.get("cond_paredes") else "No"
+        st.session_state[f"obs_paredes_{form_idx}"] = medicion.get("obs_paredes", "")
+        st.session_state[f"ventanales_{form_idx}"] = "Sí" if medicion.get("cond_vantanal") else "No"
+        st.session_state[f"obs_ventanales_{form_idx}"] = medicion.get("obs_ventanal", "")
+        st.session_state[f"aire_acond_{form_idx}"] = "Sí" if medicion.get("cond_aire_acond") else "No"
+        st.session_state[f"obs_aire_acond_{form_idx}"] = medicion.get("obs_aire_acond", "")
+        st.session_state[f"ventiladores_{form_idx}"] = "Sí" if medicion.get("cond_ventiladores") else "No"
+        st.session_state[f"obs_ventiladores_{form_idx}"] = medicion.get("obs_ventiladores", "")
+        st.session_state[f"inyeccion_extrac_{form_idx}"] = "Sí" if medicion.get("cond_inyeccion_extraccion") else "No"
+        st.session_state[f"obs_inyeccion_{form_idx}"] = medicion.get("obs_inyeccion_extraccion", "")
+        st.session_state[f"ventanas_{form_idx}"] = "Sí" if medicion.get("cond_ventanas") else "No"
+        st.session_state[f"obs_ventanas_{form_idx}"] = medicion.get("obs_ventanas", "")
+        st.session_state[f"puertas_{form_idx}"] = "Sí" if medicion.get("cond_puertas") else "No"
+        st.session_state[f"obs_puertas_{form_idx}"] = medicion.get("obs_puertas", "")
+        st.session_state[f"otras_{form_idx}"] = "Sí" if medicion.get("cond_otras") else "No"
+        st.session_state[f"obs_otras_{form_idx}"] = medicion.get("obs_otras", "")
+
+    st.session_state["status_message"] = f"Visita {id_visita} cargada para edición."
+    st.session_state["prefill_ready"] = True
+    st.rerun()
 def checkear_session():
     user_data = cookie_controller.get("user_data")
     if user_data:
@@ -63,6 +220,23 @@ def main():
             st.session_state["data_user"] = None
             st.rerun()
 
+    if "cod_equipo_t" not in st.session_state:
+        st.session_state["cod_equipo_t"] = "Seleccione..."
+    if "cod_equipo_v" not in st.session_state:
+        st.session_state["cod_equipo_v"] = "Seleccione..."
+    if "visita_prefill" not in st.session_state:
+        st.session_state["visita_prefill"] = {}
+    if "cierre_prefill" not in st.session_state:
+        st.session_state["cierre_prefill"] = {}
+    if "visitas_disponibles" not in st.session_state:
+        st.session_state["visitas_disponibles"] = pd.DataFrame()
+    if "modo_edicion" not in st.session_state:
+        st.session_state["modo_edicion"] = False
+
+    status_message = st.session_state.pop("status_message", None)
+    if status_message:
+        st.success(status_message)
+
     # --- Inicialización en session_state ---
     if "df_filtrado" not in st.session_state:
         st.session_state["df_filtrado"] = pd.DataFrame()
@@ -77,18 +251,69 @@ def main():
         input_cuv = st.text_input("Ingresa el CUV:")
         if st.button("Buscar"):
             st.session_state["input_cuv_str"] = input_cuv.strip()
+            reset_visita_context()
             resultados = get_ct(st.session_state["input_cuv_str"])
             if resultados and len(resultados) > 0:
                 st.session_state["df_info_cuv"] = pd.DataFrame([resultados[0]])
                 cuv = st.session_state["input_cuv_str"]
+                st.session_state["visitas_disponibles"] = get_visitas_por_cuv(cuv)
                 st.success("Centro de trabajo encontrado en base de datos.")
             else:
                 st.session_state["df_info_cuv"] = pd.DataFrame()
+                st.session_state["visitas_disponibles"] = pd.DataFrame()
                 st.error("No se encontró el centro de trabajo con el CUV ingresado.")
 
         df_info_cuv = st.session_state["df_info_cuv"]
 
     if not df_info_cuv.empty:
+        st.markdown("---")
+
+        visitas_df = st.session_state.get("visitas_disponibles", pd.DataFrame())
+        with st.container(border=True):
+            st.subheader("Visitas registradas")
+            if not visitas_df.empty:
+                columnas_resumen = [col for col in ["id_visita", "fecha_visita", "hora_visita", "motivo_evaluacion"]
+                                    if col in visitas_df.columns]
+                if columnas_resumen:
+                    st.dataframe(visitas_df[columnas_resumen], use_container_width=True)
+
+                opciones_map = {}
+                for _, row in visitas_df.iterrows():
+                    visita_id = row.get("id_visita")
+                    if visita_id is None:
+                        continue
+                    fecha_valor = row.get("fecha_visita")
+                    if hasattr(fecha_valor, "strftime"):
+                        fecha_str = fecha_valor.strftime("%Y-%m-%d")
+                    else:
+                        fecha_str = str(fecha_valor) if fecha_valor is not None else "Sin fecha"
+                    motivo = row.get("motivo_evaluacion") or "Sin motivo"
+                    opciones_map[visita_id] = f"{fecha_str} - {motivo} (ID {visita_id})"
+
+                if opciones_map:
+                    selected_visita_id = st.selectbox(
+                        "Selecciona una visita para editarla",
+                        options=list(opciones_map.keys()),
+                        format_func=lambda x: opciones_map.get(x, str(x)),
+                        key="visita_seleccionada"
+                    )
+                else:
+                    selected_visita_id = None
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Cargar visita seleccionada", use_container_width=True, type="primary",
+                                  disabled=not opciones_map):
+                        if selected_visita_id is not None:
+                            cargar_visita_existente(selected_visita_id)
+                with col2:
+                    if st.button("Crear nueva visita", use_container_width=True, type="secondary"):
+                        preparar_nueva_visita()
+            else:
+                st.info("No existen visitas registradas para este CUV. Puedes crear una nueva visita para comenzar.")
+                if st.button("Crear nueva visita", use_container_width=True):
+                    preparar_nueva_visita()
+
         st.markdown("---")
 
         # 1: Datos generales
@@ -108,42 +333,75 @@ def main():
         st.write("")
         st.markdown("---")
         # Formulario 1: Visita - datos visita + calibración inicial
+        visita_prefill = st.session_state.get("visita_prefill", {})
         with st.form("visita_data_inicio"):
             # 2: Inicio
             st.subheader("Datos de la visita")
 
-            fecha_visita = st.date_input("Fecha de visita", value=date.today())
-            hora_medicion = st.time_input("Hora de medición", value=dt_time(hour=9, minute=0))
+            fecha_default = visita_prefill.get("fecha_visita", date.today())
+            if isinstance(fecha_default, str):
+                fecha_default = datetime.strptime(fecha_default, "%Y-%m-%d").date()
+            hora_default = visita_prefill.get("hora_visita", dt_time(hour=9, minute=0))
+            if isinstance(hora_default, str):
+                hora_default = datetime.strptime(hora_default, "%H:%M:%S").time()
+
+            temp_default = float(visita_prefill.get("temperatura_dia", 25.0))
+            fecha_visita = st.date_input("Fecha de visita", value=fecha_default)
+            hora_medicion = st.time_input("Hora de medición", value=hora_default)
             temp_max = st.number_input("Temperatura máxima del día (°C)", min_value=-50.0, max_value=60.0,
-                                       value=25.0, step=0.1)
+                                       value=temp_default, step=0.1)
+
             opc_motivos = get_motivo_eval()
+            motivos_options = ["Seleccione..."] + opc_motivos
+            motivo_default = visita_prefill.get("motivo_evaluacion")
+            motivo_index = motivos_options.index(motivo_default) if motivo_default in opc_motivos else 0
             motivo_evaluacion = st.selectbox("Motivo de evaluación",
-                                             options=["Seleccione..."]+ opc_motivos,
-                                             index=0)
-            nombre_personal = st.text_input("Nombre del personal SMU")
-            cargo = st.text_input("Cargo", value="Administador/a")
+                                             options=motivos_options,
+                                             index=motivo_index)
+
+            nombre_personal = st.text_input("Nombre del personal SMU",
+                                            value=visita_prefill.get("nombre_personal_visita", ""))
+            cargo_por_defecto = visita_prefill.get("cargo_personal_visita") or "Administador/a"
+            cargo = st.text_input("Cargo", value=cargo_por_defecto)
 
             # 3: Calibración
             st.markdown("---")
             st.subheader("Verificación de parámetros")
             opc_equipos_temp = get_equipo_temp()
             opc_equipos_vel = get_equipo_vel()
+            opciones_temp = ["Seleccione..."] + opc_equipos_temp
+            opciones_vel = ["Seleccione..."] + opc_equipos_vel
+            equipo_temp_default = st.session_state.get("cod_equipo_t", "Seleccione...")
+            if equipo_temp_default not in opciones_temp:
+                equipo_temp_default = "Seleccione..."
+            equipo_vel_default = st.session_state.get("cod_equipo_v", "Seleccione...")
+            if equipo_vel_default not in opciones_vel:
+                equipo_vel_default = "Seleccione..."
+
+            index_temp = opciones_temp.index(equipo_temp_default)
+            index_vel = opciones_vel.index(equipo_vel_default)
             cod_equipo_t = st.selectbox("Equipo temperatura",
-                                        options=["Seleccione..."] + opc_equipos_temp, index=0, key="cod_equipo_t")
+                                        options=opciones_temp,
+                                        index=index_temp)
             cod_equipo_v = st.selectbox("Equipo velocidad aire",
-                                        options=["Seleccione..."] + opc_equipos_vel,
-                                        index=0)
-            patron_tbs = st.number_input("Patrón TBS", value=46.4, step=0.1)
-            patron_tbh = st.number_input("Patrón TBH (Sólo modificar en caso necesario)", value=12.7, step=0.1)
-            patron_tg = st.number_input("Patrón TG", value=69.8, step=0.1)
+                                        options=opciones_vel,
+                                        index=index_vel)
+
+            patron_tbs = st.number_input("Patrón TBS", value=float(visita_prefill.get("patron_tbs", 46.4)), step=0.1)
+            patron_tbh = st.number_input("Patrón TBH (Sólo modificar en caso necesario)",
+                                         value=float(visita_prefill.get("patron_tbh", 12.7)), step=0.1)
+            patron_tg = st.number_input("Patrón TG", value=float(visita_prefill.get("patron_tg", 69.8)), step=0.1)
             st.write()
-            verif_tbs_inicial = st.number_input("Verificación TBS inicial", value=None, step=0.1)
-            verif_tbh_inicial = st.number_input("Verificación TBH inicial", value=None, step=0.1)
-            verif_tg_inicial = st.number_input("Verificación TG inicial", value=None, step=0.1)
+            verif_tbs_inicial = st.number_input("Verificación TBS inicial",
+                                                value=visita_prefill.get("ver_tbs_ini"), step=0.1)
+            verif_tbh_inicial = st.number_input("Verificación TBH inicial",
+                                                value=visita_prefill.get("ver_tbh_ini"), step=0.1)
+            verif_tg_inicial = st.number_input("Verificación TG inicial",
+                                               value=visita_prefill.get("ver_tg_ini"), step=0.1)
             submit_visita_inicio = st.form_submit_button(label="Guardar información visita",
-                                                  type="primary",
-                                                  use_container_width=True,
-                                                  icon=":material/check_circle:")
+                                                        type="primary",
+                                                        use_container_width=True,
+                                                        icon=":material/check_circle:")
             if submit_visita_inicio:
                 if verif_tbs_inicial is None or verif_tbh_inicial is None or verif_tg_inicial is None:
                     st.error(
@@ -151,6 +409,8 @@ def main():
                 elif cod_equipo_t == "Seleccione...":
                     st.error("Debes seleccionar un equipo de temperatura para validar el patrón.")
                 else:
+                    st.session_state["cod_equipo_t"] = cod_equipo_t
+                    st.session_state["cod_equipo_v"] = cod_equipo_v
                     data_patron_medicion = (verif_tbs_inicial, verif_tbh_inicial, verif_tg_inicial)
 
                     verificacion = comparar_patron(data_patron_medicion, cod_equipo_t)
@@ -165,30 +425,64 @@ def main():
                     else:
                         cuv_visita = get_cuv(st.session_state["input_cuv_str"])
                         visita_inicio_data = (
-                            cuv_visita,  # cuv_visita
-                            fecha_visita.strftime("%Y-%m-%d"),  # fecha_visita (formato ISO)
-                            hora_medicion.strftime("%H:%M:%S"),  # hora_visita (formato 24h)
-                            temp_max,  # temperatura_dia
-                            motivo_evaluacion,  # motivo_evaluacion
-                            nombre_personal,  # nombre_personal_visita
-                            cargo,  # cargo_personal_visita
-                            email_usuario,  # consultor_ist
-                            cod_equipo_t,  # equipo_temp
-                            cod_equipo_v,  # equipos_vel_air
-                            patron_tbs,  # patron_tbs
-                            verif_tbs_inicial,  # ver_tbs_ini
-                            patron_tbh,  # patron_tbh
-                            verif_tbh_inicial,  # ver_tbh_ini
-                            patron_tg,  # patron_tg
-                            verif_tg_inicial  # ver_th_ini
+                            cuv_visita,
+                            fecha_visita.strftime("%Y-%m-%d"),
+                            hora_medicion.strftime("%H:%M:%S"),
+                            temp_max,
+                            motivo_evaluacion,
+                            nombre_personal,
+                            cargo,
+                            email_usuario,
+                            cod_equipo_t,
+                            cod_equipo_v,
+                            patron_tbs,
+                            verif_tbs_inicial,
+                            patron_tbh,
+                            verif_tbh_inicial,
+                            patron_tg,
+                            verif_tg_inicial
                         )
 
-                        id_visita = guardar_visita_inicio(visita_inicio_data)
-                        if id_visita is not None:
-                            st.session_state["id_visita"] = id_visita  # Guardamos el id en session_state
-                            st.success(f"Datos de visita guardados correctamente. ID de visita: {id_visita}")
+                        nuevo_prefill = {
+                            "fecha_visita": fecha_visita,
+                            "hora_visita": hora_medicion,
+                            "temperatura_dia": temp_max,
+                            "motivo_evaluacion": motivo_evaluacion if motivo_evaluacion != "Seleccione..." else "",
+                            "nombre_personal_visita": nombre_personal,
+                            "cargo_personal_visita": cargo,
+                            "consultor_ist": email_usuario,
+                            "equipo_temp": cod_equipo_t,
+                            "equipo_vel_air": cod_equipo_v,
+                            "patron_tbs": patron_tbs,
+                            "ver_tbs_ini": verif_tbs_inicial,
+                            "patron_tbh": patron_tbh,
+                            "ver_tbh_ini": verif_tbh_inicial,
+                            "patron_tg": patron_tg,
+                            "ver_tg_ini": verif_tg_inicial,
+                        }
+
+                        if st.session_state.get("modo_edicion") and st.session_state.get("id_visita"):
+                            actualizado = actualizar_visita_inicio(st.session_state["id_visita"], visita_inicio_data)
+                            if actualizado:
+                                st.session_state["visita_prefill"] = nuevo_prefill
+                                st.session_state["visitas_disponibles"] = get_visitas_por_cuv(cuv_visita)
+                                st.session_state["status_message"] = (
+                                    f"Visita {st.session_state['id_visita']} actualizada correctamente.")
+                                st.rerun()
+                            else:
+                                st.error("Error al actualizar la visita.")
                         else:
-                            st.error("Error al guardar los datos de la visita.")
+                            id_visita = guardar_visita_inicio(visita_inicio_data)
+                            if id_visita is not None:
+                                st.session_state["id_visita"] = id_visita
+                                st.session_state["modo_edicion"] = True
+                                st.session_state["visita_prefill"] = nuevo_prefill
+                                st.session_state["visitas_disponibles"] = get_visitas_por_cuv(cuv_visita)
+                                st.session_state["status_message"] = (
+                                    f"Datos de visita guardados correctamente. ID de visita: {id_visita}")
+                                st.rerun()
+                            else:
+                                st.error("Error al guardar los datos de la visita.")
 
             # fin formulario 1
 
@@ -206,6 +500,7 @@ def main():
         if "areas_data" not in st.session_state:
             st.session_state["areas_data"] = {}
 
+
         if id_visita:
             opc_areas_medicion = get_areas_options()
             opc_sector_especifico = get_sector_especifico()
@@ -214,161 +509,444 @@ def main():
             opc_ventimenta_trabajador = get_vestimenta_trabajador()
             for i in range(1, 11):  # Iterar por cada área de medición
                 area_idx = i - 1
-                default_area = st.session_state.areas_data[area_idx] if area_idx < len(
-                    st.session_state.areas_data) else {}
+                default_area = st.session_state["areas_data"].get(area_idx, {})
 
                 with st.expander(f"Área {i} - Haz clic para expandir", expanded=False):
                     with st.form(key=f"form_area_{i}"):
                         # Captura de datos del formulario
+                        area_key = f"area_sector_{i}"
+                        if area_key not in st.session_state:
+                            st.session_state[area_key] = default_area.get("nombre_area", "Seleccione...")
                         nombre_area = st.selectbox(
                             f"Área {i}",
                             options=["Seleccione..."] + opc_areas_medicion,
-                            key=f"area_sector_{i}"
+                            key=area_key
                         )
-                        sector_especifico = st.selectbox(f"Sector específico {i}",
-                                                         options=["Seleccione..."] + opc_sector_especifico,
-                                                         key=f"espec_sector_{i}")
-                        puesto_trabajo = st.selectbox(f"Puesto de trabajo {i}",
-                                                      options=["Seleccione..."] + opc_puesto_trabajo,
-                                                      key=f"puesto_trabajo_{i}")
-                        posicion_trabajador = st.selectbox(f"Posición {i}",
-                                                           options=["Seleccione..."] + opc_posicion_trabajador,
-                                                           key=f"pos_trabajador_{i}")
-                        vestimenta_trabajador = st.selectbox(f"Vestimenta {i}",
-                                                             options=["Seleccione..."] + opc_ventimenta_trabajador,
-                                                             key=f"vestimenta_{i}")
+
+                        sector_key = f"espec_sector_{i}"
+                        if sector_key not in st.session_state:
+                            st.session_state[sector_key] = default_area.get("sector_especifico", "Seleccione...")
+                        sector_especifico = st.selectbox(
+                            f"Sector específico {i}",
+                            options=["Seleccione..."] + opc_sector_especifico,
+                            key=sector_key
+                        )
+
+                        puesto_key = f"puesto_trabajo_{i}"
+                        if puesto_key not in st.session_state:
+                            st.session_state[puesto_key] = default_area.get("puesto_trabajo", "Seleccione...")
+                        puesto_trabajo = st.selectbox(
+                            f"Puesto de trabajo {i}",
+                            options=["Seleccione..."] + opc_puesto_trabajo,
+                            key=puesto_key
+                        )
+
+                        posicion_key = f"pos_trabajador_{i}"
+                        if posicion_key not in st.session_state:
+                            st.session_state[posicion_key] = default_area.get("posicion_trabajador", "Seleccione...")
+                        posicion_trabajador = st.selectbox(
+                            f"Posición {i}",
+                            options=["Seleccione..."] + opc_posicion_trabajador,
+                            key=posicion_key
+                        )
+
+                        vestimenta_key = f"vestimenta_{i}"
+                        if vestimenta_key not in st.session_state:
+                            st.session_state[vestimenta_key] = default_area.get("vestimenta_trabajador", "Seleccione...")
+                        vestimenta_trabajador = st.selectbox(
+                            f"Vestimenta {i}",
+                            options=["Seleccione..."] + opc_ventimenta_trabajador,
+                            key=vestimenta_key
+                        )
 
                         # Mediciones
-                        t_bul_seco = st.number_input(f"Temp. bulbo seco (°C) {i}", value=None,step=0.1,
-                                                     key=f"tbs_{i}")
-                        t_globo = st.number_input(f"Temp. globo (°C) {i}", value=None, step=0.1, key=f"tg_{i}")
-                        hum_rel = st.number_input(f"Humedad relativa (%) {i}",value=None, step=0.1, key=f"hr_{i}")
-                        vel_air = st.number_input(f"Velocidad del aire (m/s) {i}",value=None, step=0.1,
-                                                  key=f"vel_aire_{i}")
+                        tbs_key = f"tbs_{i}"
+                        if tbs_key not in st.session_state:
+                            st.session_state[tbs_key] = default_area.get("t_bul_seco")
+                        t_bul_seco = st.number_input(
+                            f"Temp. bulbo seco (°C) {i}",
+                            value=st.session_state[tbs_key],
+                            step=0.1,
+                            key=tbs_key
+                        )
+
+                        tg_key = f"tg_{i}"
+                        if tg_key not in st.session_state:
+                            st.session_state[tg_key] = default_area.get("t_globo")
+                        t_globo = st.number_input(
+                            f"Temp. globo (°C) {i}",
+                            value=st.session_state[tg_key],
+                            step=0.1,
+                            key=tg_key
+                        )
+
+                        hr_key = f"hr_{i}"
+                        if hr_key not in st.session_state:
+                            st.session_state[hr_key] = default_area.get("hum_rel")
+                        hum_rel = st.number_input(
+                            f"Humedad relativa (%) {i}",
+                            value=st.session_state[hr_key],
+                            step=0.1,
+                            key=hr_key
+                        )
+
+                        vel_key = f"vel_aire_{i}"
+                        if vel_key not in st.session_state:
+                            st.session_state[vel_key] = default_area.get("vel_air")
+                        vel_air = st.number_input(
+                            f"Velocidad del aire (m/s) {i}",
+                            value=st.session_state[vel_key],
+                            step=0.1,
+                            key=vel_key
+                        )
 
                         # Cálculo de PMV y PPD
-                        met = get_met(puesto_trabajo)  # Puede depender del puesto de trabajo
+                        met = get_met(puesto_trabajo)
                         clo = 0.5 if vestimenta_trabajador == "Habitual" else 1.0
 
                         # Condiciones y observaciones
-                        cond_techumbre = st.radio(f"Techumbre aislante {i}", ["Sí", "No"],
-                                                  key=f"techumbre_{i}")
-                        obs_techumbre = st.text_input(f"Obs. Techumbre {i}", key=f"obs_techumbre_{i}")
-                        cond_techumbre = 1 if cond_techumbre == "Sí" else 0
+                        techumbre_key = f"techumbre_{i}"
+                        if techumbre_key not in st.session_state:
+                            st.session_state[techumbre_key] = "Sí" if default_area.get("cond_techumbre") else "No"
+                        cond_techumbre_label = st.radio(
+                            f"Techumbre aislante {i}",
+                            ["Sí", "No"],
+                            key=techumbre_key
+                        )
+                        obs_techumbre_key = f"obs_techumbre_{i}"
+                        if obs_techumbre_key not in st.session_state:
+                            st.session_state[obs_techumbre_key] = default_area.get("obs_techumbre", "")
+                        obs_techumbre = st.text_input(
+                            f"Obs. Techumbre {i}",
+                            key=obs_techumbre_key
+                        )
+                        cond_techumbre = 1 if cond_techumbre_label == "Sí" else 0
 
-                        cond_paredes = st.radio(f"Paredes aislantes {i}", ["Sí", "No"],
-                                                key=f"paredes_{i}")
-                        obs_paredes = st.text_input(f"Obs. Paredes {i}", key=f"obs_paredes_{i}")
-                        cond_paredes = 1 if cond_paredes == "Sí" else 0
+                        paredes_key = f"paredes_{i}"
+                        if paredes_key not in st.session_state:
+                            st.session_state[paredes_key] = "Sí" if default_area.get("cond_paredes") else "No"
+                        cond_paredes_label = st.radio(
+                            f"Paredes aislantes {i}",
+                            ["Sí", "No"],
+                            key=paredes_key
+                        )
+                        obs_paredes_key = f"obs_paredes_{i}"
+                        if obs_paredes_key not in st.session_state:
+                            st.session_state[obs_paredes_key] = default_area.get("obs_paredes", "")
+                        obs_paredes = st.text_input(
+                            f"Obs. Paredes {i}",
+                            key=obs_paredes_key
+                        )
+                        cond_paredes = 1 if cond_paredes_label == "Sí" else 0
 
-                        cond_vantanal = st.radio(f"Ventanas aislantes {i}", ["Sí", "No"],
-                                                 key=f"ventanales_{i}")
-                        obs_ventanal = st.text_input(f"Obs. Ventanas {i}", key=f"obs_ventanales_{i}")
-                        cond_vantanal = 1 if cond_vantanal == "Sí" else 0
+                        ventanal_key = f"ventanales_{i}"
+                        if ventanal_key not in st.session_state:
+                            st.session_state[ventanal_key] = "Sí" if default_area.get("cond_vantanal") else "No"
+                        cond_vantanal_label = st.radio(
+                            f"Ventanas aislantes {i}",
+                            ["Sí", "No"],
+                            key=ventanal_key
+                        )
+                        obs_ventanal_key = f"obs_ventanales_{i}"
+                        if obs_ventanal_key not in st.session_state:
+                            st.session_state[obs_ventanal_key] = default_area.get("obs_ventanal", "")
+                        obs_ventanal = st.text_input(
+                            f"Obs. Ventanas {i}",
+                            key=obs_ventanal_key
+                        )
+                        cond_vantanal = 1 if cond_vantanal_label == "Sí" else 0
 
-                        cond_aire_acond = st.radio(f"Aire acondicionado {i}", ["Sí", "No"],
-                                                   key=f"aire_acond_{i}")
-                        obs_aire_acond = st.text_input(f"Obs. Aire Acondicionado {i}",
-                                                       key=f"obs_aire_acond_{i}")
-                        cond_aire_acond = 1 if cond_aire_acond == "Sí" else 0
+                        aire_key = f"aire_acond_{i}"
+                        if aire_key not in st.session_state:
+                            st.session_state[aire_key] = "Sí" if default_area.get("cond_aire_acond") else "No"
+                        cond_aire_label = st.radio(
+                            f"Aire acondicionado {i}",
+                            ["Sí", "No"],
+                            key=aire_key
+                        )
+                        obs_aire_key = f"obs_aire_acond_{i}"
+                        if obs_aire_key not in st.session_state:
+                            st.session_state[obs_aire_key] = default_area.get("obs_aire_acond", "")
+                        obs_aire_acond = st.text_input(
+                            f"Obs. Aire Acondicionado {i}",
+                            key=obs_aire_key
+                        )
+                        cond_aire_acond = 1 if cond_aire_label == "Sí" else 0
 
-                        cond_ventiladores = st.radio(f"Ventiladores {i}", ["Sí", "No"],
-                                                     key=f"ventiladores_{i}")
-                        obs_ventiladores = st.text_input(f"Obs. Ventiladores {i}",
-                                                         key=f"obs_ventiladores_{i}")
-                        cond_ventiladores = 1 if cond_ventiladores == "Sí" else 0
+                        ventiladores_key = f"ventiladores_{i}"
+                        if ventiladores_key not in st.session_state:
+                            st.session_state[ventiladores_key] = "Sí" if default_area.get("cond_ventiladores") else "No"
+                        cond_ventiladores_label = st.radio(
+                            f"Ventiladores {i}",
+                            ["Sí", "No"],
+                            key=ventiladores_key
+                        )
+                        obs_ventiladores_key = f"obs_ventiladores_{i}"
+                        if obs_ventiladores_key not in st.session_state:
+                            st.session_state[obs_ventiladores_key] = default_area.get("obs_ventiladores", "")
+                        obs_ventiladores = st.text_input(
+                            f"Obs. Ventiladores {i}",
+                            key=obs_ventiladores_key
+                        )
+                        cond_ventiladores = 1 if cond_ventiladores_label == "Sí" else 0
 
-                        cond_inyeccion_extraccion = st.radio(f"Inyección/Extracción {i}", ["Sí", "No"],
-                                                             key=f"inyeccion_extrac_{i}")
-                        obs_inyeccion_extraccion = st.text_input(f"Obs. Inyección {i}",
-                                                                 key=f"obs_inyeccion_{i}")
-                        cond_inyeccion_extraccion = 1 if cond_inyeccion_extraccion == "Sí" else 0
+                        inyeccion_key = f"inyeccion_extrac_{i}"
+                        if inyeccion_key not in st.session_state:
+                            st.session_state[inyeccion_key] = "Sí" if default_area.get("cond_inyeccion_extraccion") else "No"
+                        cond_inyeccion_label = st.radio(
+                            f"Inyección/Extracción {i}",
+                            ["Sí", "No"],
+                            key=inyeccion_key
+                        )
+                        obs_inyeccion_key = f"obs_inyeccion_{i}"
+                        if obs_inyeccion_key not in st.session_state:
+                            st.session_state[obs_inyeccion_key] = default_area.get("obs_inyeccion_extraccion", "")
+                        obs_inyeccion_extraccion = st.text_input(
+                            f"Obs. Inyección {i}",
+                            key=obs_inyeccion_key
+                        )
+                        cond_inyeccion_extraccion = 1 if cond_inyeccion_label == "Sí" else 0
 
-                        cond_ventanas = st.radio(f"Ventanas abiertas {i}", ["Sí", "No"],
-                                                 key=f"ventanas_{i}")
-                        obs_ventanas = st.text_input(f"Obs. Ventanas {i}", key=f"obs_ventanas_{i}")
-                        cond_ventanas = 1 if cond_ventanas == "Sí" else 0
+                        ventanas_key = f"ventanas_{i}"
+                        if ventanas_key not in st.session_state:
+                            st.session_state[ventanas_key] = "Sí" if default_area.get("cond_ventanas") else "No"
+                        cond_ventanas_label = st.radio(
+                            f"Ventanas abiertas {i}",
+                            ["Sí", "No"],
+                            key=ventanas_key
+                        )
+                        obs_ventanas_key = f"obs_ventanas_{i}"
+                        if obs_ventanas_key not in st.session_state:
+                            st.session_state[obs_ventanas_key] = default_area.get("obs_ventanas", "")
+                        obs_ventanas = st.text_input(
+                            f"Obs. Ventanas {i}",
+                            key=obs_ventanas_key
+                        )
+                        cond_ventanas = 1 if cond_ventanas_label == "Sí" else 0
 
-                        cond_puertas = st.radio(f"Puertas abiertas {i}", ["Sí", "No"],
-                                                key=f"puertas_{i}")
-                        obs_puertas = st.text_input(f"Obs. Puertas {i}", key=f"obs_puertas_{i}")
-                        cond_puertas = 1 if cond_puertas == "Sí" else 0
+                        puertas_key = f"puertas_{i}"
+                        if puertas_key not in st.session_state:
+                            st.session_state[puertas_key] = "Sí" if default_area.get("cond_puertas") else "No"
+                        cond_puertas_label = st.radio(
+                            f"Puertas abiertas {i}",
+                            ["Sí", "No"],
+                            key=puertas_key
+                        )
+                        obs_puertas_key = f"obs_puertas_{i}"
+                        if obs_puertas_key not in st.session_state:
+                            st.session_state[obs_puertas_key] = default_area.get("obs_puertas", "")
+                        obs_puertas = st.text_input(
+                            f"Obs. Puertas {i}",
+                            key=obs_puertas_key
+                        )
+                        cond_puertas = 1 if cond_puertas_label == "Sí" else 0
 
-                        cond_otras = st.radio(f"Puertas abiertas {i}", ["Sí", "No"], key=f"otras_{i}")
+                        otras_key = f"otras_{i}"
+                        if otras_key not in st.session_state:
+                            st.session_state[otras_key] = "Sí" if default_area.get("cond_otras") else "No"
+                        cond_otras_label = st.radio(
+                            f"Otras condiciones {i}",
+                            ["Sí", "No"],
+                            key=otras_key
+                        )
+                        obs_otras_key = f"obs_otras_{i}"
+                        if obs_otras_key not in st.session_state:
+                            st.session_state[obs_otras_key] = default_area.get("obs_otras", "")
                         obs_otras = st.text_input(
                             f"¿Se identifican otras condiciones que pueden considerarse como disconfort térmico? {i}",
-                            key=f"obs_otras_{i}")
-                        cond_otras = 1 if cond_otras == "Sí" else 0
+                            key=obs_otras_key
+                        )
+                        cond_otras = 1 if cond_otras_label == "Sí" else 0
 
                         # Guardar medición
                         if st.form_submit_button(f"Guardar Área {i}"):
-                            resultados = pmv_ppd_iso(tdb=t_bul_seco, tr=t_globo, vr=vel_air, rh=hum_rel,
-                                                     met=met, clo=clo,
-                                                     model="7730-2005", limit_inputs=False)
-                            pmv = resultados.pmv
-                            ppd = resultados.ppd
-                            resultado_medicion = check_resultado_pmv(pmv)
-                            # Solo insertar si todos los datos están completos
-                            if nombre_area != "Seleccione..." and sector_especifico != "Seleccione..." and puesto_trabajo != "Seleccione..." and posicion_trabajador != "Seleccione...":
-                                id_medicion = insertar_medicion(id_visita, nombre_area,
-                                                                sector_especifico,
-                                                                puesto_trabajo, posicion_trabajador,
-                                                                vestimenta_trabajador, t_bul_seco,
-                                                                t_globo, hum_rel,
-                                                                vel_air, ppd, pmv,
-                                                                resultado_medicion, cond_techumbre,
-                                                                obs_techumbre,
-                                                                cond_paredes, obs_paredes,
-                                                                cond_vantanal, obs_ventanal,
-                                                                cond_aire_acond,
-                                                                obs_aire_acond, cond_ventiladores,
-                                                                obs_ventiladores,
-                                                                cond_inyeccion_extraccion,
-                                                                obs_inyeccion_extraccion, cond_ventanas,
-                                                                obs_ventanas, cond_puertas, obs_puertas,
-                                                                cond_otras, obs_otras, met, clo)
+                            campos_incompletos = (
+                                nombre_area == "Seleccione..." or
+                                sector_especifico == "Seleccione..." or
+                                puesto_trabajo == "Seleccione..." or
+                                posicion_trabajador == "Seleccione..."
+                            )
+                            mediciones_incompletas = any(value is None for value in [t_bul_seco, t_globo, hum_rel, vel_air])
 
-                                if id_medicion:
-                                    # Almacenar el ID de la medición en session_state pareado con el número de formulario
-                                    st.session_state["mediciones_ids"][f"medicion_{i}"] = id_medicion
-                                    st.success(
-                                        f"Área {i} guardada con éxito. ID de la medición: {id_medicion}")
-                                    for key, id_medicion in st.session_state["mediciones_ids"].items():
-                                        st.write(
-                                            f"**{key.replace('_', ' ').capitalize()}** - ID Medición: {id_medicion}")
-                                else:
-                                    st.error(f"No se pudo guardar la medición para el área {i}.")
-                            else:
+                            if campos_incompletos:
                                 st.warning(f"Completa todos los campos antes de guardar el Área {i}.")
+                            elif mediciones_incompletas:
+                                st.warning(f"Debes completar todas las mediciones numéricas para el Área {i}.")
+                            else:
+                                resultados = pmv_ppd_iso(
+                                    tdb=t_bul_seco,
+                                    tr=t_globo,
+                                    vr=vel_air,
+                                    rh=hum_rel,
+                                    met=met,
+                                    clo=clo,
+                                    model="7730-2005",
+                                    limit_inputs=False
+                                )
+                                pmv = float(resultados.pmv)
+                                ppd = float(resultados.ppd)
+                                resultado_medicion = check_resultado_pmv(pmv)
+
+                                area_data_guardada = {
+                                    "nombre_area": nombre_area,
+                                    "sector_especifico": sector_especifico,
+                                    "puesto_trabajo": puesto_trabajo,
+                                    "posicion_trabajador": posicion_trabajador,
+                                    "vestimenta_trabajador": vestimenta_trabajador,
+                                    "t_bul_seco": t_bul_seco,
+                                    "t_globo": t_globo,
+                                    "hum_rel": hum_rel,
+                                    "vel_air": vel_air,
+                                    "ppd": ppd,
+                                    "pmv": pmv,
+                                    "resultado_medicion": resultado_medicion,
+                                    "cond_techumbre": cond_techumbre,
+                                    "obs_techumbre": obs_techumbre,
+                                    "cond_paredes": cond_paredes,
+                                    "obs_paredes": obs_paredes,
+                                    "cond_vantanal": cond_vantanal,
+                                    "obs_ventanal": obs_ventanal,
+                                    "cond_aire_acond": cond_aire_acond,
+                                    "obs_aire_acond": obs_aire_acond,
+                                    "cond_ventiladores": cond_ventiladores,
+                                    "obs_ventiladores": obs_ventiladores,
+                                    "cond_inyeccion_extraccion": cond_inyeccion_extraccion,
+                                    "obs_inyeccion_extraccion": obs_inyeccion_extraccion,
+                                    "cond_ventanas": cond_ventanas,
+                                    "obs_ventanas": obs_ventanas,
+                                    "cond_puertas": cond_puertas,
+                                    "obs_puertas": obs_puertas,
+                                    "cond_otras": cond_otras,
+                                    "obs_otras": obs_otras,
+                                    "met": met,
+                                    "clo": clo,
+                                }
+
+                                medicion_existente = st.session_state["mediciones_ids"].get(area_idx)
+                                if medicion_existente:
+                                    actualizado = actualizar_medicion(
+                                        medicion_existente,
+                                        nombre_area,
+                                        sector_especifico,
+                                        puesto_trabajo, posicion_trabajador,
+                                        vestimenta_trabajador, t_bul_seco,
+                                        t_globo, hum_rel,
+                                        vel_air, ppd, pmv,
+                                        resultado_medicion, cond_techumbre,
+                                        obs_techumbre,
+                                        cond_paredes, obs_paredes,
+                                        cond_vantanal, obs_ventanal,
+                                        cond_aire_acond,
+                                        obs_aire_acond, cond_ventiladores,
+                                        obs_ventiladores,
+                                        cond_inyeccion_extraccion,
+                                        obs_inyeccion_extraccion, cond_ventanas,
+                                        obs_ventanas, cond_puertas, obs_puertas,
+                                        cond_otras, obs_otras, met, clo
+                                    )
+
+                                    if actualizado:
+                                        st.session_state["areas_data"][area_idx] = area_data_guardada
+                                        st.session_state["status_message"] = (
+                                            f"Área {i} actualizada con éxito (ID medición {medicion_existente})."
+                                        )
+                                        st.rerun()
+                                    else:
+                                        st.error(f"No se pudo actualizar la medición para el área {i}.")
+                                else:
+                                    id_medicion = insertar_medicion(
+                                        id_visita, nombre_area,
+                                        sector_especifico,
+                                        puesto_trabajo, posicion_trabajador,
+                                        vestimenta_trabajador, t_bul_seco,
+                                        t_globo, hum_rel,
+                                        vel_air, ppd, pmv,
+                                        resultado_medicion, cond_techumbre,
+                                        obs_techumbre,
+                                        cond_paredes, obs_paredes,
+                                        cond_vantanal, obs_ventanal,
+                                        cond_aire_acond,
+                                        obs_aire_acond, cond_ventiladores,
+                                        obs_ventiladores,
+                                        cond_inyeccion_extraccion,
+                                        obs_inyeccion_extraccion, cond_ventanas,
+                                        obs_ventanas, cond_puertas, obs_puertas,
+                                        cond_otras, obs_otras, met, clo
+                                    )
+
+                                    if id_medicion:
+                                        st.session_state["mediciones_ids"][area_idx] = id_medicion
+                                        st.session_state["areas_data"][area_idx] = area_data_guardada
+                                        st.session_state["status_message"] = (
+                                            f"Área {i} guardada con éxito. ID de la medición: {id_medicion}"
+                                        )
+                                        st.rerun()
+                                    else:
+                                        st.error(f"No se pudo guardar la medición para el área {i}.")
+
+            if st.session_state["mediciones_ids"]:
+                with st.container(border=True):
+                    st.markdown("**Mediciones registradas**")
+                    for area_idx, medicion_id in sorted(st.session_state["mediciones_ids"].items()):
+                        st.write(f"Área {area_idx + 1}: ID Medición {medicion_id}")
+        else:
+            st.warning("Debes guardar primero los datos de la visita antes de registrar mediciones.")
 
         # 4: Cierre
         st.subheader("Cierre")
+        cierre_prefill = st.session_state.get("cierre_prefill", {})
+
         with st.form("visita_data_cierre"):
-            verif_tbs_final = st.number_input("Verificación TBS final", value=None, step=0.1)
-            verif_tbh_final = st.number_input("Verificación TBH final", value=None, step=0.1)
-            verif_tg_final = st.number_input("Verificación TG final", value=None, step=0.1)
-            comentarios_finales = st.text_area("Comentarios finales de evaluación", max_chars=1000)
+            verif_tbs_final = st.number_input(
+                "Verificación TBS final",
+                value=cierre_prefill.get("ver_tbs_fin"),
+                step=0.1
+            )
+            verif_tbh_final = st.number_input(
+                "Verificación TBH final",
+                value=cierre_prefill.get("ver_tbh_fin"),
+                step=0.1
+            )
+            verif_tg_final = st.number_input(
+                "Verificación TG final",
+                value=cierre_prefill.get("ver_tg_fin"),
+                step=0.1
+            )
+            comentarios_finales = st.text_area(
+                "Comentarios finales de evaluación",
+                value=cierre_prefill.get("note_visita", ""),
+                max_chars=1000
+            )
 
-
-            cierre_submitted = st.form_submit_button(label="Guardar verificación final", type="primary", use_container_width=True, icon=":material/check_circle:")
+            cierre_submitted = st.form_submit_button(
+                label="Guardar verificación final",
+                type="primary",
+                use_container_width=True,
+                icon=":material/check_circle:"
+            )
             if cierre_submitted:
                 if verif_tbs_final is None or verif_tbh_final is None or verif_tg_final is None:
                     st.error(
-                        "Los campos de verificación son obligatorios. Por favor completa todos los valores antes de guardar.")
+                        "Los campos de verificación son obligatorios. Por favor completa todos los valores antes de guardar."
+                    )
                 else:
                     equipo = st.session_state["cod_equipo_t"]
-                    if not equipo:
+                    if not equipo or equipo == "Seleccione...":
                         st.error("No se encontró el equipo de temperatura para comparar el patrón.")
                     else:
-                        data_patron_medicion = (verif_tbs_final,
-                                               verif_tbh_final,
-                                               verif_tg_final)
+                        data_patron_medicion = (
+                            verif_tbs_final,
+                            verif_tbh_final,
+                            verif_tg_final
+                        )
                         verificacion = comparar_patron(data_patron_medicion, equipo)
                         campos_alerta = [campo for campo, estado in verificacion.items() if estado == "alerta"]
                         if "error" in verificacion:
                             st.error(f"Error en la comparación de patrón: {verificacion['error']}")
                         elif "alerta" in verificacion.values():
-                            st.error(f"No se ha guardado la verificación | La verificación del patrón detecta una diferencia mayor a 0,5°C. en: {', '.join(campos_alerta)}")
+                            st.error(
+                                f"No se ha guardado la verificación | La verificación del patrón detecta una diferencia mayor a 0,5°C. en: {', '.join(campos_alerta)}"
+                            )
                             st.json(verificacion)
                         else:
                             visita_cierre_data = (
@@ -385,18 +963,26 @@ def main():
                                 "Comentarios finales de evaluación": comentarios_finales
                             }
 
+                            st.session_state["cierre_prefill"] = {
+                                "ver_tbs_fin": verif_tbs_final,
+                                "ver_tbh_fin": verif_tbh_final,
+                                "ver_tg_fin": verif_tg_final,
+                                "note_visita": comentarios_finales,
+                            }
+
                             id_visita = st.session_state.get("id_visita")
-                            st.write(id_visita)
                             if id_visita is not None:
                                 actualizado = guardar_visita_cierre(id_visita, visita_cierre_data)
                                 if actualizado:
-                                    st.success(f"Visita actualizada correctamente. (ID: {id_visita})")
                                     st.session_state["visita_actualizada"] = True
+                                    st.session_state["status_message"] = (
+                                        f"Verificación final guardada correctamente para la visita {id_visita}."
+                                    )
+                                    st.rerun()
                                 else:
                                     st.error("Error al actualizar la visita.")
                             else:
                                 st.error("No se encontró el ID de la visita para actualizar.")
-
         st.markdown("---")
         # 5: Generación informe
         st.subheader("Finalizar Visita")

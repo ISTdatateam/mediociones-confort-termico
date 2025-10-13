@@ -670,6 +670,18 @@ def get_equipo_vel():
     finally:
         db.close()
 
+def get_equipo_dicc_por_id(id_equipo):
+    if id_equipo is None:
+        return None
+    db = MySQLDatabaseManager()
+    try:
+        query = "SELECT equipo_dicc FROM equipos_medicion WHERE id_equipo = %s"
+        db.cursor.execute(query, (id_equipo,))
+        resultado = db.cursor.fetchone()
+        return resultado['equipo_dicc'] if resultado else None
+    finally:
+        db.close()
+
 def get_sector_especifico():
     db = MySQLDatabaseManager()
     try:
