@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date, time as dt_time
+from datetime import date, time as dt_time
 import time
 import os
 import io
@@ -11,7 +11,8 @@ from utils.helpers import (autenticar_usuario, get_ct, precompletar_campos_ct, i
                            check_resultado_pmv, get_areas_options, get_motivo_eval, get_equipo_vel, get_equipo_temp,
                            get_sector_especifico, get_puesto_trabajo, get_posicion_trabajador,
                            get_vestimenta_trabajador, comparar_patron, get_visitas_por_cuv, get_visita,
-                           get_mediciones, actualizar_visita_inicio, actualizar_medicion, get_equipo_dicc_por_id)
+                           get_mediciones, actualizar_visita_inicio, actualizar_medicion, get_equipo_dicc_por_id,
+                           normalizar_fecha_mysql, normalizar_hora_mysql)
 from pythermalcomfort.models import pmv_ppd_iso
 from utils.informe import generar_informe
 
@@ -92,13 +93,8 @@ def cargar_visita_existente(id_visita):
 
     visita = visita_df.iloc[0].to_dict()
 
-    fecha_visita = visita.get("fecha_visita")
-    if isinstance(fecha_visita, str):
-        fecha_visita = datetime.strptime(fecha_visita, "%Y-%m-%d").date()
-
-    hora_visita = visita.get("hora_visita")
-    if isinstance(hora_visita, str):
-        hora_visita = datetime.strptime(hora_visita, "%H:%M:%S").time()
+    fecha_visita = normalizar_fecha_mysql(visita.get("fecha_visita"))
+    hora_visita = normalizar_hora_mysql(visita.get("hora_visita"))
 
     equipo_temp = get_equipo_dicc_por_id(visita.get("equipo_temp")) or "Seleccione..."
     equipo_vel = get_equipo_dicc_por_id(visita.get("equipo_vel_air")) or "Seleccione..."
@@ -338,12 +334,8 @@ def main():
             # 2: Inicio
             st.subheader("Datos de la visita")
 
-            fecha_default = visita_prefill.get("fecha_visita", date.today())
-            if isinstance(fecha_default, str):
-                fecha_default = datetime.strptime(fecha_default, "%Y-%m-%d").date()
-            hora_default = visita_prefill.get("hora_visita", dt_time(hour=9, minute=0))
-            if isinstance(hora_default, str):
-                hora_default = datetime.strptime(hora_default, "%H:%M:%S").time()
+            fecha_default = normalizar_fecha_mysql(visita_prefill.get("fecha_visita")) or date.today()
+            hora_default = normalizar_hora_mysql(visita_prefill.get("hora_visita")) or dt_time(hour=9, minute=0)
 
             temp_default = float(visita_prefill.get("temperatura_dia", 25.0))
             fecha_visita = st.date_input("Fecha de visita", value=fecha_default)

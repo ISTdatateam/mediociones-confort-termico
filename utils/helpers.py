@@ -7,6 +7,63 @@ import time
 from streamlit_cookies_controller import CookieController
 import logging
 import pandas as pd
+from datetime import datetime, date, time as dt_time, timedelta
+
+
+def normalizar_fecha_mysql(valor):
+    """Convierte valores devueltos por MySQL a objetos ``date`` consistentes."""
+    if valor is None or valor == "":
+        return None
+
+    if isinstance(valor, date) and not isinstance(valor, datetime):
+        return valor
+
+    if isinstance(valor, datetime):
+        return valor.date()
+
+    if isinstance(valor, str):
+        # Intentamos varios formatos comunes; si fallan, dejamos el valor original
+        for formato in ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d"):
+            try:
+                return datetime.strptime(valor, formato).date()
+            except ValueError:
+                continue
+        try:
+            return date.fromisoformat(valor)
+        except ValueError:
+            return valor
+
+    return valor
+
+
+def normalizar_hora_mysql(valor):
+    """Convierte valores de hora devueltos por MySQL a objetos ``time``."""
+    if valor is None or valor == "":
+        return None
+
+    if isinstance(valor, dt_time):
+        return valor
+
+    if isinstance(valor, datetime):
+        return valor.time()
+
+    if isinstance(valor, timedelta):
+        # MySQL Connector entrega campos TIME como timedelta
+        base_datetime = datetime.combine(date.today(), dt_time.min) + valor
+        return base_datetime.time()
+
+    if isinstance(valor, str):
+        for formato in ("%H:%M:%S", "%H:%M"):
+            try:
+                return datetime.strptime(valor, formato).time()
+            except ValueError:
+                continue
+        try:
+            return dt_time.fromisoformat(valor)
+        except ValueError:
+            return valor
+
+    return valor
 
 
 def validar_rut(rut):
@@ -102,7 +159,13 @@ def get_visita(id_visita):
             """
         db.cursor.execute(query, (id_visita,))
         resultados = db.cursor.fetchall()
-        return pd.DataFrame(resultados)
+        df = pd.DataFrame(resultados)
+        if not df.empty:
+            if "fecha_visita" in df.columns:
+                df["fecha_visita"] = df["fecha_visita"].apply(normalizar_fecha_mysql)
+            if "hora_visita" in df.columns:
+                df["hora_visita"] = df["hora_visita"].apply(normalizar_hora_mysql)
+        return df
     finally:
         db.close()
 
@@ -116,7 +179,13 @@ def get_visitas_por_cuv(cuv):
         """
         db.cursor.execute(query, (int(cuv),))
         resultados = db.cursor.fetchall()
-        return pd.DataFrame(resultados)
+        df = pd.DataFrame(resultados)
+        if not df.empty:
+            if "fecha_visita" in df.columns:
+                df["fecha_visita"] = df["fecha_visita"].apply(normalizar_fecha_mysql)
+            if "hora_visita" in df.columns:
+                df["hora_visita"] = df["hora_visita"].apply(normalizar_hora_mysql)
+        return df
     finally:
         db.close()
 
