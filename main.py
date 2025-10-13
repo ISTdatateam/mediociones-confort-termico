@@ -166,9 +166,9 @@ def preparar_nueva_visita():
 
 def cargar_visita_existente(id_visita):
     visita_df = get_visita(id_visita)
+    st.session_state["mostrar_formularios"] = True
     if visita_df.empty:
         st.session_state["status_message"] = "No se encontraron datos para la visita seleccionada."
-        st.session_state["mostrar_formularios"] = True
         st.rerun()
         return
 
