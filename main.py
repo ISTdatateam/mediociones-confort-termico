@@ -111,6 +111,7 @@ load_dotenv()
 def reset_visita_context():
     """Limpiar los datos asociados a una visita en el session_state."""
     st.session_state["id_visita"] = None
+    st.session_state["mostrar_formularios"] = False
     st.session_state["modo_edicion"] = False
     st.session_state["visita_prefill"] = {}
     st.session_state["cierre_prefill"] = {}
@@ -158,6 +159,7 @@ def reset_visita_context():
 
 def preparar_nueva_visita():
     reset_visita_context()
+    st.session_state["mostrar_formularios"] = True
     st.session_state["status_message"] = "Formulario listo para registrar una nueva visita."
     st.rerun()
 
@@ -166,6 +168,7 @@ def cargar_visita_existente(id_visita):
     visita_df = get_visita(id_visita)
     if visita_df.empty:
         st.session_state["status_message"] = "No se encontraron datos para la visita seleccionada."
+        st.session_state["mostrar_formularios"] = True
         st.rerun()
         return
 
@@ -323,6 +326,8 @@ def main():
         st.session_state["df_filtrado"] = pd.DataFrame()
     if "df_info_cuv" not in st.session_state:
         st.session_state["df_info_cuv"] = pd.DataFrame()
+    if "mostrar_formularios" not in st.session_state:
+        st.session_state["mostrar_formularios"] = False
     if "input_cuv_str" not in st.session_state:
         st.session_state["input_cuv_str"] = ""
 
@@ -412,6 +417,12 @@ def main():
                     preparar_nueva_visita()
 
         st.write("")
+
+        if not st.session_state.get("mostrar_formularios", False):
+            st.info(
+                "Selecciona una visita y presiona 'Cargar visita seleccionada' o pulsa 'Crear nueva visita' para habilitar el formulario.")
+            st.stop()
+
         st.markdown("---")
         # Formulario 1: Visita - datos visita + calibración inicial
         visita_prefill = st.session_state.get("visita_prefill", {})
