@@ -5,6 +5,7 @@ from datetime import date, datetime, time as dt_time, timedelta
 import time
 import os
 import io
+from decimal import Decimal
 from dotenv import load_dotenv
 from streamlit_cookies_controller import CookieController
 from utils.helpers import (autenticar_usuario, get_ct, precompletar_campos_ct, interpreter_pmv, get_cuv,
@@ -75,6 +76,25 @@ from pythermalcomfort.models import pmv_ppd_iso
 from utils.informe import generar_informe
 
 st.set_page_config(page_title="Informes Confort Térmico", layout="wide")
+
+
+def ensure_float(value, default=None):
+    """Garantiza que los valores numéricos sean ``float`` compatibles con Streamlit."""
+    if value is None:
+        return default
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        value = value.strip()
+        if value == "":
+            return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
 
 # Inicializa el controlador de cookies
 cookie_controller = CookieController(key="app_cookies")
@@ -162,28 +182,28 @@ def cargar_visita_existente(id_visita):
     st.session_state["visita_prefill"] = {
         "fecha_visita": fecha_visita or date.today(),
         "hora_visita": hora_visita or dt_time(hour=9, minute=0),
-        "temperatura_dia": float(visita.get("temperatura_dia") or 25.0),
+        "temperatura_dia": ensure_float(visita.get("temperatura_dia"), 25.0),
         "motivo_evaluacion": visita.get("motivo_evaluacion", ""),
         "nombre_personal_visita": visita.get("nombre_personal_visita", ""),
         "cargo_personal_visita": visita.get("cargo_personal_visita", ""),
         "consultor_ist": visita.get("consultor_ist", ""),
         "equipo_temp": equipo_temp,
         "equipo_vel_air": equipo_vel,
-        "patron_tbs": visita.get("patron_tbs") if visita.get("patron_tbs") is not None else 46.4,
-        "ver_tbs_ini": visita.get("ver_tbs_ini"),
-        "patron_tbh": visita.get("patron_tbh") if visita.get("patron_tbh") is not None else 12.7,
-        "ver_tbh_ini": visita.get("ver_tbh_ini"),
-        "patron_tg": visita.get("patron_tg") if visita.get("patron_tg") is not None else 69.8,
-        "ver_tg_ini": visita.get("ver_tg_ini"),
+        "patron_tbs": ensure_float(visita.get("patron_tbs"), 46.4),
+        "ver_tbs_ini": ensure_float(visita.get("ver_tbs_ini")),
+        "patron_tbh": ensure_float(visita.get("patron_tbh"), 12.7),
+        "ver_tbh_ini": ensure_float(visita.get("ver_tbh_ini")),
+        "patron_tg": ensure_float(visita.get("patron_tg"), 69.8),
+        "ver_tg_ini": ensure_float(visita.get("ver_tg_ini")),
     }
 
     st.session_state["cod_equipo_t"] = equipo_temp
     st.session_state["cod_equipo_v"] = equipo_vel
 
     cierre_prefill = {
-        "ver_tbs_fin": visita.get("ver_tbs_fin"),
-        "ver_tbh_fin": visita.get("ver_tbh_fin"),
-        "ver_tg_fin": visita.get("ver_tg_fin"),
+        "ver_tbs_fin": ensure_float(visita.get("ver_tbs_fin")),
+        "ver_tbh_fin": ensure_float(visita.get("ver_tbh_fin")),
+        "ver_tg_fin": ensure_float(visita.get("ver_tg_fin")),
         "note_visita": visita.get("note_visita", ""),
     }
     st.session_state["cierre_prefill"] = cierre_prefill
@@ -203,17 +223,24 @@ def cargar_visita_existente(id_visita):
     st.session_state["areas_data"] = {}
     for idx, medicion in enumerate(mediciones_df.to_dict("records")):
         st.session_state["mediciones_ids"][idx] = medicion.get("id_medicion")
-        st.session_state["areas_data"][idx] = medicion
+        area_normalizada = {
+            **medicion,
+            "t_bul_seco": ensure_float(medicion.get("t_bul_seco")),
+            "t_globo": ensure_float(medicion.get("t_globo")),
+            "hum_rel": ensure_float(medicion.get("hum_rel")),
+            "vel_air": ensure_float(medicion.get("vel_air")),
+        }
+        st.session_state["areas_data"][idx] = area_normalizada
         form_idx = idx + 1
-        st.session_state[f"area_sector_{form_idx}"] = medicion.get("nombre_area", "Seleccione...")
-        st.session_state[f"espec_sector_{form_idx}"] = medicion.get("sector_especifico", "Seleccione...")
-        st.session_state[f"puesto_trabajo_{form_idx}"] = medicion.get("puesto_trabajo", "Seleccione...")
-        st.session_state[f"pos_trabajador_{form_idx}"] = medicion.get("posicion_trabajador", "Seleccione...")
-        st.session_state[f"vestimenta_{form_idx}"] = medicion.get("vestimenta_trabajador", "Seleccione...")
-        st.session_state[f"tbs_{form_idx}"] = medicion.get("t_bul_seco")
-        st.session_state[f"tg_{form_idx}"] = medicion.get("t_globo")
-        st.session_state[f"hr_{form_idx}"] = medicion.get("hum_rel")
-        st.session_state[f"vel_aire_{form_idx}"] = medicion.get("vel_air")
+        st.session_state[f"area_sector_{form_idx}"] = area_normalizada.get("nombre_area", "Seleccione...")
+        st.session_state[f"espec_sector_{form_idx}"] = area_normalizada.get("sector_especifico", "Seleccione...")
+        st.session_state[f"puesto_trabajo_{form_idx}"] = area_normalizada.get("puesto_trabajo", "Seleccione...")
+        st.session_state[f"pos_trabajador_{form_idx}"] = area_normalizada.get("posicion_trabajador", "Seleccione...")
+        st.session_state[f"vestimenta_{form_idx}"] = area_normalizada.get("vestimenta_trabajador", "Seleccione...")
+        st.session_state[f"tbs_{form_idx}"] = ensure_float(area_normalizada.get("t_bul_seco"), 0.0)
+        st.session_state[f"tg_{form_idx}"] = ensure_float(area_normalizada.get("t_globo"), 0.0)
+        st.session_state[f"hr_{form_idx}"] = ensure_float(area_normalizada.get("hum_rel"), 0.0)
+        st.session_state[f"vel_aire_{form_idx}"] = ensure_float(area_normalizada.get("vel_air"), 0.0)
         st.session_state[f"techumbre_{form_idx}"] = "Sí" if medicion.get("cond_techumbre") else "No"
         st.session_state[f"obs_techumbre_{form_idx}"] = medicion.get("obs_techumbre", "")
         st.session_state[f"paredes_{form_idx}"] = "Sí" if medicion.get("cond_paredes") else "No"
@@ -322,6 +349,22 @@ def main():
     if not df_info_cuv.empty:
         st.markdown("---")
 
+        # 1: Datos generales
+        st.subheader("Datos generales")
+        if not df_info_cuv.empty:
+            cuv_info_row = df_info_cuv.iloc[0]
+            campos_ct = precompletar_campos_ct(cuv_info_row)
+        else:
+            razon_social = st.text_input("Razón Social")
+            rut = st.text_input("RUT")
+            nombre_local = st.text_input("Nombre de Local")
+            direccion = st.text_input("Dirección")
+            comuna = st.text_input("Comuna")
+            region = st.text_input("Región")
+            cuv_val = st.text_input("CUV")
+
+        st.markdown("---")
+
         visitas_df = st.session_state.get("visitas_disponibles", pd.DataFrame())
         with st.container(border=True):
             st.subheader("Visitas registradas")
@@ -368,22 +411,6 @@ def main():
                 if st.button("Crear nueva visita", use_container_width=True):
                     preparar_nueva_visita()
 
-        st.markdown("---")
-
-        # 1: Datos generales
-        st.subheader("Datos generales")
-        if not df_info_cuv.empty:
-            cuv_info_row = df_info_cuv.iloc[0]
-            campos_ct = precompletar_campos_ct(cuv_info_row)
-        else:
-            razon_social = st.text_input("Razón Social")
-            rut = st.text_input("RUT")
-            nombre_local = st.text_input("Nombre de Local")
-            direccion = st.text_input("Dirección")
-            comuna = st.text_input("Comuna")
-            region = st.text_input("Región")
-            cuv_val = st.text_input("CUV")
-
         st.write("")
         st.markdown("---")
         # Formulario 1: Visita - datos visita + calibración inicial
@@ -395,7 +422,7 @@ def main():
             fecha_default = normalizar_fecha_mysql(visita_prefill.get("fecha_visita")) or date.today()
             hora_default = normalizar_hora_mysql(visita_prefill.get("hora_visita")) or dt_time(hour=9, minute=0)
 
-            temp_default = float(visita_prefill.get("temperatura_dia", 25.0))
+            temp_default = ensure_float(visita_prefill.get("temperatura_dia"), 25.0)
             fecha_visita = st.date_input("Fecha de visita", value=fecha_default)
             hora_medicion = st.time_input("Hora de medición", value=hora_default)
             temp_max = st.number_input("Temperatura máxima del día (°C)", min_value=-50.0, max_value=60.0,
@@ -437,17 +464,25 @@ def main():
                                         options=opciones_vel,
                                         index=index_vel)
 
-            patron_tbs = st.number_input("Patrón TBS", value=float(visita_prefill.get("patron_tbs", 46.4)), step=0.1)
+            patron_tbs_default = ensure_float(visita_prefill.get("patron_tbs"), 46.4)
+            patron_tbh_default = ensure_float(visita_prefill.get("patron_tbh"), 12.7)
+            patron_tg_default = ensure_float(visita_prefill.get("patron_tg"), 69.8)
+
+            patron_tbs = st.number_input("Patrón TBS", value=patron_tbs_default, step=0.1)
             patron_tbh = st.number_input("Patrón TBH (Sólo modificar en caso necesario)",
-                                         value=float(visita_prefill.get("patron_tbh", 12.7)), step=0.1)
-            patron_tg = st.number_input("Patrón TG", value=float(visita_prefill.get("patron_tg", 69.8)), step=0.1)
+                                         value=patron_tbh_default, step=0.1)
+            patron_tg = st.number_input("Patrón TG", value=patron_tg_default, step=0.1)
             st.write()
+            ver_tbs_ini_default = ensure_float(visita_prefill.get("ver_tbs_ini"), 0.0)
+            ver_tbh_ini_default = ensure_float(visita_prefill.get("ver_tbh_ini"), 0.0)
+            ver_tg_ini_default = ensure_float(visita_prefill.get("ver_tg_ini"), 0.0)
+
             verif_tbs_inicial = st.number_input("Verificación TBS inicial",
-                                                value=visita_prefill.get("ver_tbs_ini"), step=0.1)
+                                                value=ver_tbs_ini_default, step=0.1)
             verif_tbh_inicial = st.number_input("Verificación TBH inicial",
-                                                value=visita_prefill.get("ver_tbh_ini"), step=0.1)
+                                                value=ver_tbh_ini_default, step=0.1)
             verif_tg_inicial = st.number_input("Verificación TG inicial",
-                                               value=visita_prefill.get("ver_tg_ini"), step=0.1)
+                                               value=ver_tg_ini_default, step=0.1)
             submit_visita_inicio = st.form_submit_button(label="Guardar información visita",
                                                         type="primary",
                                                         use_container_width=True,
@@ -947,19 +982,23 @@ def main():
         cierre_prefill = st.session_state.get("cierre_prefill", {})
 
         with st.form("visita_data_cierre"):
+            ver_tbs_fin_default = ensure_float(cierre_prefill.get("ver_tbs_fin"), 0.0)
+            ver_tbh_fin_default = ensure_float(cierre_prefill.get("ver_tbh_fin"), 0.0)
+            ver_tg_fin_default = ensure_float(cierre_prefill.get("ver_tg_fin"), 0.0)
+
             verif_tbs_final = st.number_input(
                 "Verificación TBS final",
-                value=cierre_prefill.get("ver_tbs_fin"),
+                value=ver_tbs_fin_default,
                 step=0.1
             )
             verif_tbh_final = st.number_input(
                 "Verificación TBH final",
-                value=cierre_prefill.get("ver_tbh_fin"),
+                value=ver_tbh_fin_default,
                 step=0.1
             )
             verif_tg_final = st.number_input(
                 "Verificación TG final",
-                value=cierre_prefill.get("ver_tg_fin"),
+                value=ver_tg_fin_default,
                 step=0.1
             )
             comentarios_finales = st.text_area(
