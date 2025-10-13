@@ -177,48 +177,62 @@ def cargar_visita_existente(id_visita):
     fecha_visita = normalizar_fecha_mysql(visita.get("fecha_visita"))
     hora_visita = normalizar_hora_mysql(visita.get("hora_visita"))
 
-    equipo_temp = get_equipo_dicc_por_id(visita.get("equipo_temp")) or "Seleccione..."
-    equipo_vel = get_equipo_dicc_por_id(visita.get("equipo_vel_air")) or "Seleccione..."
+    tipo_evaluacion = visita.get("tipo_evaluacion", "confort") or "confort"
+    es_confort = tipo_evaluacion == "confort"
+
+    equipo_temp = get_equipo_dicc_por_id(visita.get("equipo_temp")) if es_confort else "Seleccione..."
+    equipo_vel = get_equipo_dicc_por_id(visita.get("equipo_vel_air")) if es_confort else "Seleccione..."
+    if equipo_temp is None:
+        equipo_temp = "Seleccione..."
+    if equipo_vel is None:
+        equipo_vel = "Seleccione..."
 
     st.session_state["id_visita"] = id_visita
     st.session_state["modo_edicion"] = True
     st.session_state["visita_prefill"] = {
         "fecha_visita": fecha_visita or date.today(),
         "hora_visita": hora_visita or dt_time(hour=9, minute=0),
-        "temperatura_dia": ensure_float(visita.get("temperatura_dia"), 25.0),
         "motivo_evaluacion": visita.get("motivo_evaluacion", ""),
         "nombre_personal_visita": visita.get("nombre_personal_visita", ""),
         "cargo_personal_visita": visita.get("cargo_personal_visita", ""),
         "consultor_ist": visita.get("consultor_ist", ""),
+        "tipo_evaluacion": tipo_evaluacion,
+        "temperatura_dia": ensure_float(visita.get("temperatura_dia"), 25.0) if es_confort else None,
         "equipo_temp": equipo_temp,
         "equipo_vel_air": equipo_vel,
-        "patron_tbs": ensure_float(visita.get("patron_tbs"), 46.4),
-        "ver_tbs_ini": ensure_float(visita.get("ver_tbs_ini")),
-        "patron_tbh": ensure_float(visita.get("patron_tbh"), 12.7),
-        "ver_tbh_ini": ensure_float(visita.get("ver_tbh_ini")),
-        "patron_tg": ensure_float(visita.get("patron_tg"), 69.8),
-        "ver_tg_ini": ensure_float(visita.get("ver_tg_ini")),
+        "patron_tbs": ensure_float(visita.get("patron_tbs"), 46.4) if es_confort else None,
+        "ver_tbs_ini": ensure_float(visita.get("ver_tbs_ini")) if es_confort else None,
+        "patron_tbh": ensure_float(visita.get("patron_tbh"), 12.7) if es_confort else None,
+        "ver_tbh_ini": ensure_float(visita.get("ver_tbh_ini")) if es_confort else None,
+        "patron_tg": ensure_float(visita.get("patron_tg"), 69.8) if es_confort else None,
+        "ver_tg_ini": ensure_float(visita.get("ver_tg_ini")) if es_confort else None,
     }
 
-    st.session_state["cod_equipo_t"] = equipo_temp
-    st.session_state["cod_equipo_v"] = equipo_vel
+    if es_confort:
+        st.session_state["cod_equipo_t"] = equipo_temp
+        st.session_state["cod_equipo_v"] = equipo_vel
 
-    cierre_prefill = {
-        "ver_tbs_fin": ensure_float(visita.get("ver_tbs_fin")),
-        "ver_tbh_fin": ensure_float(visita.get("ver_tbh_fin")),
-        "ver_tg_fin": ensure_float(visita.get("ver_tg_fin")),
-        "note_visita": visita.get("note_visita", ""),
-    }
-    st.session_state["cierre_prefill"] = cierre_prefill
-
-    if all(value is not None for key, value in cierre_prefill.items() if key != "note_visita"):
-        st.session_state["cierre"] = {
-            "Verificación TBS final": cierre_prefill["ver_tbs_fin"],
-            "Verificación TBH final": cierre_prefill["ver_tbh_fin"],
-            "Verificación TG final": cierre_prefill["ver_tg_fin"],
-            "Comentarios finales de evaluación": cierre_prefill["note_visita"],
+        cierre_prefill = {
+            "ver_tbs_fin": ensure_float(visita.get("ver_tbs_fin")),
+            "ver_tbh_fin": ensure_float(visita.get("ver_tbh_fin")),
+            "ver_tg_fin": ensure_float(visita.get("ver_tg_fin")),
+            "note_visita": visita.get("note_visita", ""),
         }
+        st.session_state["cierre_prefill"] = cierre_prefill
+
+        if all(value is not None for key, value in cierre_prefill.items() if key != "note_visita"):
+            st.session_state["cierre"] = {
+                "Verificación TBS final": cierre_prefill["ver_tbs_fin"],
+                "Verificación TBH final": cierre_prefill["ver_tbh_fin"],
+                "Verificación TG final": cierre_prefill["ver_tg_fin"],
+                "Comentarios finales de evaluación": cierre_prefill["note_visita"],
+            }
+        else:
+            st.session_state.pop("cierre", None)
     else:
+        st.session_state["cod_equipo_t"] = "Seleccione..."
+        st.session_state["cod_equipo_v"] = "Seleccione..."
+        st.session_state["cierre_prefill"] = {"note_visita": visita.get("note_visita", "")}
         st.session_state.pop("cierre", None)
 
     mediciones_df = get_mediciones(id_visita)
@@ -374,13 +388,26 @@ def main():
         with st.container(border=True):
             st.subheader("Visitas registradas")
             if not visitas_df.empty:
-                columnas_resumen = [col for col in ["id_visita", "fecha_visita", "hora_visita", "motivo_evaluacion"]
-                                    if col in visitas_df.columns]
+                tipo_labels = {
+                    "confort": "Confort térmico",
+                    "ventilacion": "Ventilación",
+                }
+                df_visitas_display = visitas_df.copy()
+                if "tipo_evaluacion" in df_visitas_display.columns:
+                    df_visitas_display["tipo_evaluacion"] = df_visitas_display["tipo_evaluacion"].map(
+                        lambda x: tipo_labels.get(x, x if x else "")
+                    )
+
+                columnas_resumen = [
+                    col
+                    for col in ["id_visita", "fecha_visita", "hora_visita", "motivo_evaluacion", "tipo_evaluacion"]
+                    if col in df_visitas_display.columns
+                ]
                 if columnas_resumen:
-                    st.dataframe(visitas_df[columnas_resumen], use_container_width=True)
+                    st.dataframe(df_visitas_display[columnas_resumen], use_container_width=True)
 
                 opciones_map = {}
-                for _, row in visitas_df.iterrows():
+                for _, row in df_visitas_display.iterrows():
                     visita_id = row.get("id_visita")
                     if visita_id is None:
                         continue
@@ -390,7 +417,8 @@ def main():
                     else:
                         fecha_str = str(fecha_valor) if fecha_valor is not None else "Sin fecha"
                     motivo = row.get("motivo_evaluacion") or "Sin motivo"
-                    opciones_map[visita_id] = f"{fecha_str} - {motivo} (ID {visita_id})"
+                    tipo_label = row.get("tipo_evaluacion") or "Sin tipo"
+                    opciones_map[visita_id] = f"{fecha_str} - {tipo_label} - {motivo} (ID {visita_id})"
 
                 if opciones_map:
                     selected_visita_id = st.selectbox(
@@ -452,137 +480,240 @@ def main():
             cargo_por_defecto = visita_prefill.get("cargo_personal_visita") or "Administador/a"
             cargo = st.text_input("Cargo", value=cargo_por_defecto)
 
-            # 3: Calibración
             st.markdown("---")
-            st.subheader("Verificación de parámetros")
-            opc_equipos_temp = get_equipo_temp()
-            opc_equipos_vel = get_equipo_vel()
-            opciones_temp = ["Seleccione..."] + opc_equipos_temp
-            opciones_vel = ["Seleccione..."] + opc_equipos_vel
-            equipo_temp_default = st.session_state.get("cod_equipo_t", "Seleccione...")
-            if equipo_temp_default not in opciones_temp:
-                equipo_temp_default = "Seleccione..."
-            equipo_vel_default = st.session_state.get("cod_equipo_v", "Seleccione...")
-            if equipo_vel_default not in opciones_vel:
-                equipo_vel_default = "Seleccione..."
+            st.subheader("Tipo de evaluación")
+            eval_options = {
+                "Confort térmico": "confort",
+                "Ventilación": "ventilacion",
+            }
+            etiquetas_eval = list(eval_options.keys())
+            tipo_actual = visita_prefill.get("tipo_evaluacion", "confort")
+            etiqueta_actual = next((label for label, val in eval_options.items() if val == tipo_actual), etiquetas_eval[0])
+            try:
+                idx_tipo = etiquetas_eval.index(etiqueta_actual)
+            except ValueError:
+                idx_tipo = 0
+            etiqueta_seleccionada = st.selectbox(
+                "Selecciona el tipo de evaluación",
+                options=etiquetas_eval,
+                index=idx_tipo,
+            )
+            tipo_evaluacion = eval_options[etiqueta_seleccionada]
+            es_confort = tipo_evaluacion == "confort"
 
-            index_temp = opciones_temp.index(equipo_temp_default)
-            index_vel = opciones_vel.index(equipo_vel_default)
-            cod_equipo_t = st.selectbox("Equipo temperatura",
-                                        options=opciones_temp,
-                                        index=index_temp)
-            cod_equipo_v = st.selectbox("Equipo velocidad aire",
-                                        options=opciones_vel,
-                                        index=index_vel)
+            cod_equipo_t = st.session_state.get("cod_equipo_t", "Seleccione...")
+            cod_equipo_v = st.session_state.get("cod_equipo_v", "Seleccione...")
+            patron_tbs = visita_prefill.get("patron_tbs") if es_confort else None
+            patron_tbh = visita_prefill.get("patron_tbh") if es_confort else None
+            patron_tg = visita_prefill.get("patron_tg") if es_confort else None
+            verif_tbs_inicial = visita_prefill.get("ver_tbs_ini") if es_confort else None
+            verif_tbh_inicial = visita_prefill.get("ver_tbh_ini") if es_confort else None
+            verif_tg_inicial = visita_prefill.get("ver_tg_ini") if es_confort else None
 
-            patron_tbs_default = ensure_float(visita_prefill.get("patron_tbs"), 46.4)
-            patron_tbh_default = ensure_float(visita_prefill.get("patron_tbh"), 12.7)
-            patron_tg_default = ensure_float(visita_prefill.get("patron_tg"), 69.8)
+            if es_confort:
+                # 3: Calibración
+                st.markdown("---")
+                st.subheader("Verificación de parámetros")
+                opc_equipos_temp = get_equipo_temp()
+                opc_equipos_vel = get_equipo_vel()
+                opciones_temp = ["Seleccione..."] + opc_equipos_temp
+                opciones_vel = ["Seleccione..."] + opc_equipos_vel
+                if cod_equipo_t not in opciones_temp:
+                    cod_equipo_t = "Seleccione..."
+                if cod_equipo_v not in opciones_vel:
+                    cod_equipo_v = "Seleccione..."
 
-            patron_tbs = st.number_input("Patrón TBS", value=patron_tbs_default, step=0.1)
-            patron_tbh = st.number_input("Patrón TBH (Sólo modificar en caso necesario)",
-                                         value=patron_tbh_default, step=0.1)
-            patron_tg = st.number_input("Patrón TG", value=patron_tg_default, step=0.1)
-            st.write()
-            ver_tbs_ini_default = ensure_float(visita_prefill.get("ver_tbs_ini"), 0.0)
-            ver_tbh_ini_default = ensure_float(visita_prefill.get("ver_tbh_ini"), 0.0)
-            ver_tg_ini_default = ensure_float(visita_prefill.get("ver_tg_ini"), 0.0)
+                index_temp = opciones_temp.index(cod_equipo_t)
+                index_vel = opciones_vel.index(cod_equipo_v)
+                cod_equipo_t = st.selectbox(
+                    "Equipo temperatura",
+                    options=opciones_temp,
+                    index=index_temp,
+                )
+                cod_equipo_v = st.selectbox(
+                    "Equipo velocidad aire",
+                    options=opciones_vel,
+                    index=index_vel,
+                )
 
-            verif_tbs_inicial = st.number_input("Verificación TBS inicial",
-                                                value=ver_tbs_ini_default, step=0.1)
-            verif_tbh_inicial = st.number_input("Verificación TBH inicial",
-                                                value=ver_tbh_ini_default, step=0.1)
-            verif_tg_inicial = st.number_input("Verificación TG inicial",
-                                               value=ver_tg_ini_default, step=0.1)
+                patron_tbs_default = ensure_float(visita_prefill.get("patron_tbs"), 46.4)
+                patron_tbh_default = ensure_float(visita_prefill.get("patron_tbh"), 12.7)
+                patron_tg_default = ensure_float(visita_prefill.get("patron_tg"), 69.8)
+
+                patron_tbs = st.number_input("Patrón TBS", value=patron_tbs_default, step=0.1)
+                patron_tbh = st.number_input(
+                    "Patrón TBH (Sólo modificar en caso necesario)",
+                    value=patron_tbh_default,
+                    step=0.1,
+                )
+                patron_tg = st.number_input("Patrón TG", value=patron_tg_default, step=0.1)
+                st.write()
+                ver_tbs_ini_default = ensure_float(visita_prefill.get("ver_tbs_ini"), 0.0)
+                ver_tbh_ini_default = ensure_float(visita_prefill.get("ver_tbh_ini"), 0.0)
+                ver_tg_ini_default = ensure_float(visita_prefill.get("ver_tg_ini"), 0.0)
+
+                verif_tbs_inicial = st.number_input(
+                    "Verificación TBS inicial",
+                    value=ver_tbs_ini_default,
+                    step=0.1,
+                )
+                verif_tbh_inicial = st.number_input(
+                    "Verificación TBH inicial",
+                    value=ver_tbh_ini_default,
+                    step=0.1,
+                )
+                verif_tg_inicial = st.number_input(
+                    "Verificación TG inicial",
+                    value=ver_tg_ini_default,
+                    step=0.1,
+                )
+            else:
+                cod_equipo_t = "Seleccione..."
+                cod_equipo_v = "Seleccione..."
+                st.info(
+                    "El formulario detallado para evaluaciones de ventilación estará disponible próximamente."
+                )
             submit_visita_inicio = st.form_submit_button(label="Guardar información visita",
                                                         type="primary",
                                                         use_container_width=True,
                                                         icon=":material/check_circle:")
-            if submit_visita_inicio:
-                if verif_tbs_inicial is None or verif_tbh_inicial is None or verif_tg_inicial is None:
+
+        if submit_visita_inicio:
+            cuv_visita = get_cuv(st.session_state["input_cuv_str"])
+            motivo_limpio = motivo_evaluacion if motivo_evaluacion != "Seleccione..." else ""
+            visita_base_data = {
+                "cuv_visita": cuv_visita,
+                "fecha_visita": fecha_visita.strftime("%Y-%m-%d"),
+                "hora_visita": hora_medicion.strftime("%H:%M:%S"),
+                "motivo_evaluacion": motivo_limpio,
+                "nombre_personal_visita": nombre_personal,
+                "cargo_personal_visita": cargo,
+                "consultor_ist": email_usuario,
+                "tipo_evaluacion": tipo_evaluacion,
+            }
+
+            errores = False
+            confort_data = None
+
+        if es_confort:
+            if verif_tbs_inicial is None or verif_tbh_inicial is None or verif_tg_inicial is None:
+                st.error(
+                    "Los campos de verificación son obligatorios. Por favor completa todos los valores antes de guardar."
+                )
+                errores = True
+            elif cod_equipo_t == "Seleccione...":
+                st.error("Debes seleccionar un equipo de temperatura para validar el patrón.")
+                errores = True
+            else:
+                st.session_state["cod_equipo_t"] = cod_equipo_t
+                st.session_state["cod_equipo_v"] = cod_equipo_v
+                data_patron_medicion = (
+                    verif_tbs_inicial,
+                    verif_tbh_inicial,
+                    verif_tg_inicial,
+                )
+
+                verificacion = comparar_patron(data_patron_medicion, cod_equipo_t)
+                campos_alerta = [campo for campo, estado in verificacion.items() if estado == "alerta"]
+
+                if "error" in verificacion:
+                    st.error(f"Error en la comparación de patrón: {verificacion['error']}")
+                    errores = True
+                elif "alerta" in verificacion.values():
                     st.error(
-                        "Los campos de verificación son obligatorios. Por favor completa todos los valores antes de guardar.")
-                elif cod_equipo_t == "Seleccione...":
-                    st.error("Debes seleccionar un equipo de temperatura para validar el patrón.")
+                        "No se ha guardado la visita | La verificación del patrón detecta una diferencia mayor a 0,5°C en: "
+                        + ", ".join(campos_alerta)
+                    )
+                    st.json(verificacion)
+                    errores = True
                 else:
-                    st.session_state["cod_equipo_t"] = cod_equipo_t
-                    st.session_state["cod_equipo_v"] = cod_equipo_v
-                    data_patron_medicion = (verif_tbs_inicial, verif_tbh_inicial, verif_tg_inicial)
+                    confort_data = {
+                        "temperatura_dia": temp_max,
+                        "equipo_temp": cod_equipo_t,
+                        "equipo_vel_air": cod_equipo_v,
+                        "patron_tbs": patron_tbs,
+                        "ver_tbs_ini": verif_tbs_inicial,
+                        "patron_tbh": patron_tbh,
+                        "ver_tbh_ini": verif_tbh_inicial,
+                        "patron_tg": patron_tg,
+                        "ver_tg_ini": verif_tg_inicial,
+                    }
+        else:
+            st.session_state["cod_equipo_t"] = "Seleccione..."
+            st.session_state["cod_equipo_v"] = "Seleccione..."
 
-                    verificacion = comparar_patron(data_patron_medicion, cod_equipo_t)
-                    campos_alerta = [campo for campo, estado in verificacion.items() if estado == "alerta"]
+        if errores:
+            st.stop()
 
-                    if "error" in verificacion:
-                        st.error(f"Error en la comparación de patrón: {verificacion['error']}")
-                    elif "alerta" in verificacion.values():
-                        st.error(
-                            f"No se ha guardado la visita | La verificación del patrón detecta una diferencia mayor a 0,5°C en: {', '.join(campos_alerta)}")
-                        st.json(verificacion)
-                    else:
-                        cuv_visita = get_cuv(st.session_state["input_cuv_str"])
-                        visita_inicio_data = (
-                            cuv_visita,
-                            fecha_visita.strftime("%Y-%m-%d"),
-                            hora_medicion.strftime("%H:%M:%S"),
-                            temp_max,
-                            motivo_evaluacion,
-                            nombre_personal,
-                            cargo,
-                            email_usuario,
-                            cod_equipo_t,
-                            cod_equipo_v,
-                            patron_tbs,
-                            verif_tbs_inicial,
-                            patron_tbh,
-                            verif_tbh_inicial,
-                            patron_tg,
-                            verif_tg_inicial
-                        )
+        nuevo_prefill = {
+            "fecha_visita": fecha_visita,
+            "hora_visita": hora_medicion,
+            "motivo_evaluacion": motivo_limpio,
+            "nombre_personal_visita": nombre_personal,
+            "cargo_personal_visita": cargo,
+            "consultor_ist": email_usuario,
+            "tipo_evaluacion": tipo_evaluacion,
+        }
 
-                        nuevo_prefill = {
-                            "fecha_visita": fecha_visita,
-                            "hora_visita": hora_medicion,
-                            "temperatura_dia": temp_max,
-                            "motivo_evaluacion": motivo_evaluacion if motivo_evaluacion != "Seleccione..." else "",
-                            "nombre_personal_visita": nombre_personal,
-                            "cargo_personal_visita": cargo,
-                            "consultor_ist": email_usuario,
-                            "equipo_temp": cod_equipo_t,
-                            "equipo_vel_air": cod_equipo_v,
-                            "patron_tbs": patron_tbs,
-                            "ver_tbs_ini": verif_tbs_inicial,
-                            "patron_tbh": patron_tbh,
-                            "ver_tbh_ini": verif_tbh_inicial,
-                            "patron_tg": patron_tg,
-                            "ver_tg_ini": verif_tg_inicial,
-                        }
+        if es_confort and confort_data:
+            nuevo_prefill.update({
+                "temperatura_dia": temp_max,
+                "equipo_temp": cod_equipo_t,
+                "equipo_vel_air": cod_equipo_v,
+                "patron_tbs": patron_tbs,
+                "ver_tbs_ini": verif_tbs_inicial,
+                "patron_tbh": patron_tbh,
+                "ver_tbh_ini": verif_tbh_inicial,
+                "patron_tg": patron_tg,
+                "ver_tg_ini": verif_tg_inicial,
+            })
 
-                        if st.session_state.get("modo_edicion") and st.session_state.get("id_visita"):
-                            actualizado = actualizar_visita_inicio(st.session_state["id_visita"], visita_inicio_data)
-                            if actualizado:
-                                st.session_state["visita_prefill"] = nuevo_prefill
-                                st.session_state["visitas_disponibles"] = get_visitas_por_cuv(cuv_visita)
-                                st.session_state["status_message"] = (
-                                    f"Visita {st.session_state['id_visita']} actualizada correctamente.")
-                                st.rerun()
-                            else:
-                                st.error("Error al actualizar la visita.")
-                        else:
-                            id_visita = guardar_visita_inicio(visita_inicio_data)
-                            if id_visita is not None:
-                                st.session_state["id_visita"] = id_visita
-                                st.session_state["modo_edicion"] = True
-                                st.session_state["visita_prefill"] = nuevo_prefill
-                                st.session_state["visitas_disponibles"] = get_visitas_por_cuv(cuv_visita)
-                                st.session_state["status_message"] = (
-                                    f"Datos de visita guardados correctamente. ID de visita: {id_visita}")
-                                st.rerun()
-                            else:
-                                st.error("Error al guardar los datos de la visita.")
+        if st.session_state.get("modo_edicion") and st.session_state.get("id_visita"):
+            actualizado = actualizar_visita_inicio(
+                st.session_state["id_visita"], visita_base_data, confort_data
+            )
+            if actualizado:
+                st.session_state["visita_prefill"] = nuevo_prefill
+                st.session_state["visitas_disponibles"] = get_visitas_por_cuv(cuv_visita)
+                st.session_state["status_message"] = (
+                    f"Visita {st.session_state['id_visita']} actualizada correctamente."
+                )
+                st.rerun()
+            else:
+                st.error("Error al actualizar la visita.")
+        else:
+            id_visita = guardar_visita_inicio(visita_base_data, confort_data)
 
+        if id_visita is not None:
+            st.session_state["id_visita"] = id_visita
+            st.session_state["modo_edicion"] = True
+            st.session_state["visita_prefill"] = nuevo_prefill
+            st.session_state["visitas_disponibles"] = get_visitas_por_cuv(cuv_visita)
+            st.session_state["status_message"] = (
+                f"Datos de visita guardados correctamente. ID de visita: {id_visita}"
+            )
+            st.rerun()
+        else:
+            st.error("Error al guardar los datos de la visita.")
             # fin formulario 1
 
         # 3. Formulario 2: Mediciones de Áreas (Formularios Independientes)
+        tipo_actual = st.session_state.get("visita_prefill", {}).get("tipo_evaluacion", "confort")
+        if tipo_actual != "confort":
+            st.subheader("Mediciones")
+            st.info(
+                "El registro de mediciones para evaluaciones de ventilación estará disponible próximamente."
+            )
+            st.markdown("---")
+            st.subheader("Cierre")
+            st.info("El cierre de visitas para este tipo de evaluación se habilitará en futuras versiones.")
+            st.markdown("---")
+            st.subheader("Finalizar Visita")
+            st.warning(
+                "Para visitas de ventilación aún no es posible registrar mediciones ni finalizar el proceso desde la aplicación."
+            )
+            st.stop()
+
         st.subheader("Mediciones de Áreas")
         st.info("Completa y guarda cada área individualmente")
 
@@ -1072,7 +1203,8 @@ def main():
 
                             id_visita = st.session_state.get("id_visita")
                             if id_visita is not None:
-                                actualizado = guardar_visita_cierre(id_visita, visita_cierre_data)
+                                tipo_eval = st.session_state.get("visita_prefill", {}).get("tipo_evaluacion", "confort")
+                                actualizado = guardar_visita_cierre(id_visita, visita_cierre_data, tipo_eval)
                                 if actualizado:
                                     st.session_state["visita_actualizada"] = True
                                     st.session_state["status_message"] = (

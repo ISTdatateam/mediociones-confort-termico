@@ -152,9 +152,35 @@ def get_visita(id_visita):
     db = MySQLDatabaseManager()
     try:
         query = """
-            SELECT v.*, u.name AS consultor_nombre
+            SELECT
+                v.id_visita,
+                v.cuv_visita,
+                v.fecha_visita,
+                v.hora_visita,
+                v.motivo_evaluacion,
+                v.nombre_personal_visita,
+                v.cargo_personal_visita,
+                v.consultor_ist,
+                v.consultor_cargo,
+                v.consultor_zonal,
+                v.note_visita,
+                v.tipo_evaluacion,
+                u.name AS consultor_nombre,
+                ec.temperatura_dia,
+                ec.equipo_temp,
+                ec.equipo_vel_air,
+                ec.patron_tbs,
+                ec.ver_tbs_ini,
+                ec.patron_tbh,
+                ec.ver_tbh_ini,
+                ec.patron_tg,
+                ec.ver_tg_ini,
+                ec.ver_tbs_fin,
+                ec.ver_tbh_fin,
+                ec.ver_tg_fin
             FROM visitas v
             JOIN usuarios u ON v.consultor_ist = u.email
+            LEFT JOIN ev_confort ec ON ec.visita_id = v.id_visita
             WHERE v.id_visita = %s
             """
         db.cursor.execute(query, (id_visita,))
@@ -173,9 +199,15 @@ def get_visitas_por_cuv(cuv):
     db = MySQLDatabaseManager()
     try:
         query = """
-            SELECT * FROM visitas
-            WHERE cuv_visita = %s
-            ORDER BY fecha_visita DESC
+            SELECT
+                v.id_visita,
+                v.fecha_visita,
+                v.hora_visita,
+                v.motivo_evaluacion,
+                v.tipo_evaluacion
+            FROM visitas v
+            WHERE v.cuv_visita = %s
+            ORDER BY v.fecha_visita DESC
         """
         db.cursor.execute(query, (int(cuv),))
         resultados = db.cursor.fetchall()
@@ -293,206 +325,300 @@ def get_cuv(campo_cuv):
     cuv = campo_cuv
     return cuv
 
-def guardar_visita_inicio(visita_data):
+def _obtener_datos_consultor(db, consultor_ist):
+    """Obtiene el cargo y zonal asociados a un consultor."""
+    query_user = "SELECT cargo, zonal FROM usuarios WHERE email = %s"
+    db.cursor.execute(query_user, (consultor_ist,))
+    return db.cursor.fetchone()
+
+
+def _obtener_id_equipo_por_dicc(db, equipo_dicc):
+    """Retorna el identificador del equipo a partir de su código público."""
+    if not equipo_dicc or equipo_dicc == "Seleccione...":
+        return None
+    query_equipo = "SELECT id_equipo FROM equipos_medicion WHERE equipo_dicc = %s"
+    db.cursor.execute(query_equipo, (equipo_dicc,))
+    row = db.cursor.fetchone()
+    return row['id_equipo'] if row else None
+
+
+def guardar_visita_inicio(visita_data, confort_data=None):
+    """Inserta una visita y, de ser necesario, su información de confort térmico."""
     db = MySQLDatabaseManager()
     try:
-        (cuv_visita, fecha_visita, hora_visita, temperatura_dia, motivo_evaluacion,
-         nombre_personal_visita, cargo_personal_visita, consultor_ist, equipo_temp, equipo_vel_air,
-         patron_tbs, ver_tbs_ini, patron_tbh, ver_tbh_ini, patron_tg, ver_tg_ini) = visita_data
-        # paso 1: Obtener datos consultor
-        query_user = "SELECT name, cargo, zonal FROM usuarios WHERE email = %s"
-        db.cursor.execute(query_user, (consultor_ist,))
-        user_row = db.cursor.fetchone()
-        if not user_row:
-            logging.error("No se encontró el usuario con email %s", consultor_ist)
+        consultor_info = _obtener_datos_consultor(db, visita_data["consultor_ist"])
+        if not consultor_info:
+            logging.error("No se encontró el usuario con email %s", visita_data["consultor_ist"])
             return None
-        consultor_name, consultor_cargo, consultor_zonal = user_row['name'], user_row['cargo'], user_row['zonal']
 
-        # paso2: Obtener el id del equipo de temperatura
-        query_equipo_temp = "SELECT id_equipo FROM equipos_medicion WHERE equipo_dicc = %s"
-        db.cursor.execute(query_equipo_temp, (equipo_temp,))
-        row_temp = db.cursor.fetchone()
-        if not row_temp:
-            logging.error("No se encontró el equipo de temperatura con equipo_dicc %s", equipo_temp)
+        tipo_evaluacion = visita_data.get("tipo_evaluacion", "confort")
+        equipo_temp_id = None
+        equipo_vel_id = None
+
+        if tipo_evaluacion == "confort" and not confort_data:
+            logging.error("Se requieren datos de confort para guardar una visita de tipo confort.")
             return None
-        id_equipo_temp = row_temp['id_equipo']
 
-        # paso 3: Obtener el id del equipo de velocidad
-        query_equipo_vel = "SELECT id_equipo FROM equipos_medicion WHERE equipo_dicc = %s"
-        db.cursor.execute(query_equipo_vel, (equipo_vel_air,))
-        row_vel = db.cursor.fetchone()
-        if not row_vel:
-            logging.error("No se encontró el equipo de velocidad con equipo_dicc %s", equipo_vel_air)
-            return None
-        id_equipo_vel = row_vel['id_equipo']
+        if tipo_evaluacion == "confort" and confort_data:
+            equipo_temp_id = _obtener_id_equipo_por_dicc(db, confort_data.get("equipo_temp"))
+            equipo_vel_id = _obtener_id_equipo_por_dicc(db, confort_data.get("equipo_vel_air"))
+            if equipo_temp_id is None or equipo_vel_id is None:
+                logging.error("No se encontraron los equipos indicados para la visita de confort.")
+                return None
 
-        # paso 4: Preparo la consulta
-        query = """
+        query_visita = """
             INSERT INTO visitas (
                 cuv_visita,
                 fecha_visita,
                 hora_visita,
-                temperatura_dia,
                 motivo_evaluacion,
                 nombre_personal_visita,
                 cargo_personal_visita,
                 consultor_ist,
-                equipo_temp,
-                equipo_vel_air,
-                patron_tbs,
-                ver_tbs_ini,
-                patron_tbh,
-                ver_tbh_ini,
-                patron_tg,
-                ver_tg_ini,
                 consultor_cargo,
-                consultor_zonal
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                consultor_zonal,
+                note_visita,
+                tipo_evaluacion
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        params = (
-            cuv_visita,
-            fecha_visita,
-            hora_visita,
-            temperatura_dia,
-            motivo_evaluacion,
-            nombre_personal_visita,
-            cargo_personal_visita,
-            consultor_ist,
-            id_equipo_temp,
-            id_equipo_vel,
-            patron_tbs,
-            ver_tbs_ini,
-            patron_tbh,
-            ver_tbh_ini,
-            patron_tg,
-            ver_tg_ini,
-            consultor_cargo,
-            consultor_zonal
+
+        params_visita = (
+            visita_data["cuv_visita"],
+            visita_data["fecha_visita"],
+            visita_data["hora_visita"],
+            visita_data.get("motivo_evaluacion"),
+            visita_data.get("nombre_personal_visita"),
+            visita_data.get("cargo_personal_visita"),
+            visita_data["consultor_ist"],
+            consultor_info["cargo"],
+            consultor_info["zonal"],
+            visita_data.get("note_visita"),
+            tipo_evaluacion,
         )
-        # paso 5: Ejecuto la consulta
-        db.cursor.execute(query, params)
-        db.connection.commit()
+
+        db.cursor.execute(query_visita, params_visita)
         id_visita = db.cursor.lastrowid
+
+        if tipo_evaluacion == "confort" and confort_data:
+            query_confort = """
+                INSERT INTO ev_confort (
+                    visita_id,
+                    temperatura_dia,
+                    equipo_temp,
+                    equipo_vel_air,
+                    patron_tbs,
+                    ver_tbs_ini,
+                    patron_tbh,
+                    ver_tbh_ini,
+                    patron_tg,
+                    ver_tg_ini,
+                    ver_tbs_fin,
+                    ver_tbh_fin,
+                    ver_tg_fin
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+
+            params_confort = (
+                id_visita,
+                confort_data.get("temperatura_dia"),
+                equipo_temp_id,
+                equipo_vel_id,
+                confort_data.get("patron_tbs"),
+                confort_data.get("ver_tbs_ini"),
+                confort_data.get("patron_tbh"),
+                confort_data.get("ver_tbh_ini"),
+                confort_data.get("patron_tg"),
+                confort_data.get("ver_tg_ini"),
+                confort_data.get("ver_tbs_fin"),
+                confort_data.get("ver_tbh_fin"),
+                confort_data.get("ver_tg_fin"),
+            )
+
+            db.cursor.execute(query_confort, params_confort)
+
+        db.connection.commit()
         return id_visita
 
     except Exception as e:
         logging.error(f"Error al guardar la visita: {e}")
+        if db.connection:
+            db.connection.rollback()
         return None
     finally:
         db.close()
 
 
-def actualizar_visita_inicio(id_visita, visita_data):
+def actualizar_visita_inicio(id_visita, visita_data, confort_data=None):
+    """Actualiza la información base de una visita y sus datos de confort."""
     db = MySQLDatabaseManager()
     try:
-        (cuv_visita, fecha_visita, hora_visita, temperatura_dia, motivo_evaluacion,
-         nombre_personal_visita, cargo_personal_visita, consultor_ist, equipo_temp, equipo_vel_air,
-         patron_tbs, ver_tbs_ini, patron_tbh, ver_tbh_ini, patron_tg, ver_tg_ini) = visita_data
-
-        query_user = "SELECT name, cargo, zonal FROM usuarios WHERE email = %s"
-        db.cursor.execute(query_user, (consultor_ist,))
-        user_row = db.cursor.fetchone()
-        if not user_row:
-            logging.error("No se encontró el usuario con email %s", consultor_ist)
+        consultor_info = _obtener_datos_consultor(db, visita_data["consultor_ist"])
+        if not consultor_info:
+            logging.error("No se encontró el usuario con email %s", visita_data["consultor_ist"])
             return False
-        consultor_name, consultor_cargo, consultor_zonal = user_row['name'], user_row['cargo'], user_row['zonal']
 
-        query_equipo_temp = "SELECT id_equipo FROM equipos_medicion WHERE equipo_dicc = %s"
-        db.cursor.execute(query_equipo_temp, (equipo_temp,))
-        row_temp = db.cursor.fetchone()
-        if not row_temp:
-            logging.error("No se encontró el equipo de temperatura con equipo_dicc %s", equipo_temp)
+        tipo_evaluacion = visita_data.get("tipo_evaluacion", "confort")
+        equipo_temp_id = None
+        equipo_vel_id = None
+
+        if tipo_evaluacion == "confort" and not confort_data:
+            logging.error("Se requieren datos de confort para actualizar una visita de tipo confort.")
             return False
-        id_equipo_temp = row_temp['id_equipo']
 
-        query_equipo_vel = "SELECT id_equipo FROM equipos_medicion WHERE equipo_dicc = %s"
-        db.cursor.execute(query_equipo_vel, (equipo_vel_air,))
-        row_vel = db.cursor.fetchone()
-        if not row_vel:
-            logging.error("No se encontró el equipo de velocidad con equipo_dicc %s", equipo_vel_air)
-            return False
-        id_equipo_vel = row_vel['id_equipo']
+        if tipo_evaluacion == "confort" and confort_data:
+            equipo_temp_id = _obtener_id_equipo_por_dicc(db, confort_data.get("equipo_temp"))
+            equipo_vel_id = _obtener_id_equipo_por_dicc(db, confort_data.get("equipo_vel_air"))
+            if equipo_temp_id is None or equipo_vel_id is None:
+                logging.error("No se encontraron los equipos indicados para la visita de confort.")
+                return False
 
-        query = """
+        query_visita = """
             UPDATE visitas
             SET cuv_visita = %s,
                 fecha_visita = %s,
                 hora_visita = %s,
-                temperatura_dia = %s,
                 motivo_evaluacion = %s,
                 nombre_personal_visita = %s,
                 cargo_personal_visita = %s,
                 consultor_ist = %s,
-                equipo_temp = %s,
-                equipo_vel_air = %s,
-                patron_tbs = %s,
-                ver_tbs_ini = %s,
-                patron_tbh = %s,
-                ver_tbh_ini = %s,
-                patron_tg = %s,
-                ver_tg_ini = %s,
                 consultor_cargo = %s,
-                consultor_zonal = %s
+                consultor_zonal = %s,
+                tipo_evaluacion = %s
             WHERE id_visita = %s
         """
 
-        params = (
-            cuv_visita,
-            fecha_visita,
-            hora_visita,
-            temperatura_dia,
-            motivo_evaluacion,
-            nombre_personal_visita,
-            cargo_personal_visita,
-            consultor_ist,
-            id_equipo_temp,
-            id_equipo_vel,
-            patron_tbs,
-            ver_tbs_ini,
-            patron_tbh,
-            ver_tbh_ini,
-            patron_tg,
-            ver_tg_ini,
-            consultor_cargo,
-            consultor_zonal,
-            id_visita
+        params_visita = (
+            visita_data["cuv_visita"],
+            visita_data["fecha_visita"],
+            visita_data["hora_visita"],
+            visita_data.get("motivo_evaluacion"),
+            visita_data.get("nombre_personal_visita"),
+            visita_data.get("cargo_personal_visita"),
+            visita_data["consultor_ist"],
+            consultor_info["cargo"],
+            consultor_info["zonal"],
+            tipo_evaluacion,
+            id_visita,
         )
 
-        db.cursor.execute(query, params)
+        db.cursor.execute(query_visita, params_visita)
+
+        if tipo_evaluacion == "confort" and confort_data:
+            query_existe = "SELECT 1 FROM ev_confort WHERE visita_id = %s"
+            db.cursor.execute(query_existe, (id_visita,))
+            existe_confort = db.cursor.fetchone() is not None
+
+            if existe_confort:
+                query_update = """
+                    UPDATE ev_confort
+                    SET temperatura_dia = %s,
+                        equipo_temp = %s,
+                        equipo_vel_air = %s,
+                        patron_tbs = %s,
+                        ver_tbs_ini = %s,
+                        patron_tbh = %s,
+                        ver_tbh_ini = %s,
+                        patron_tg = %s,
+                        ver_tg_ini = %s
+                    WHERE visita_id = %s
+                """
+
+                params_update = (
+                    confort_data.get("temperatura_dia"),
+                    equipo_temp_id,
+                    equipo_vel_id,
+                    confort_data.get("patron_tbs"),
+                    confort_data.get("ver_tbs_ini"),
+                    confort_data.get("patron_tbh"),
+                    confort_data.get("ver_tbh_ini"),
+                    confort_data.get("patron_tg"),
+                    confort_data.get("ver_tg_ini"),
+                    id_visita,
+                )
+
+                db.cursor.execute(query_update, params_update)
+            else:
+                query_insert = """
+                    INSERT INTO ev_confort (
+                        visita_id,
+                        temperatura_dia,
+                        equipo_temp,
+                        equipo_vel_air,
+                        patron_tbs,
+                        ver_tbs_ini,
+                        patron_tbh,
+                        ver_tbh_ini,
+                        patron_tg,
+                        ver_tg_ini
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+
+                params_insert = (
+                    id_visita,
+                    confort_data.get("temperatura_dia"),
+                    equipo_temp_id,
+                    equipo_vel_id,
+                    confort_data.get("patron_tbs"),
+                    confort_data.get("ver_tbs_ini"),
+                    confort_data.get("patron_tbh"),
+                    confort_data.get("ver_tbh_ini"),
+                    confort_data.get("patron_tg"),
+                    confort_data.get("ver_tg_ini"),
+                )
+
+                db.cursor.execute(query_insert, params_insert)
+        else:
+            db.cursor.execute("DELETE FROM ev_confort WHERE visita_id = %s", (id_visita,))
+
         db.connection.commit()
         return True
 
     except Exception as e:
         logging.error(f"Error al actualizar la visita: {e}")
+        if db.connection:
+            db.connection.rollback()
         return False
     finally:
         db.close()
 
 
-def guardar_visita_cierre(id_visita, dato_cierre):
-    query = """
-        UPDATE visitas
-        SET ver_tbs_fin = %s,
-            ver_tbh_fin = %s,
-            ver_tg_fin = %s,
-            note_visita = %s
-        WHERE id_visita = %s
-    """
-    params = (
-        dato_cierre[0],  # ver_tbs_fin
-        dato_cierre[1],  # ver_tbh_fin
-        dato_cierre[2],  # ver_tg_fin
-        dato_cierre[3],  # note_visita
-        id_visita  # id_visita para la cláusula WHERE
-    )
-
+def guardar_visita_cierre(id_visita, dato_cierre, tipo_evaluacion):
+    """Almacena la información de cierre de una visita según su tipo de evaluación."""
     db = MySQLDatabaseManager()
     try:
-        db.cursor.execute(query, params)
+        query_visita = "UPDATE visitas SET note_visita = %s WHERE id_visita = %s"
+        db.cursor.execute(query_visita, (dato_cierre[3], id_visita))
+
+        if tipo_evaluacion == "confort":
+            query_confort = """
+                INSERT INTO ev_confort (
+                    visita_id,
+                    ver_tbs_fin,
+                    ver_tbh_fin,
+                    ver_tg_fin
+                ) VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    ver_tbs_fin = VALUES(ver_tbs_fin),
+                    ver_tbh_fin = VALUES(ver_tbh_fin),
+                    ver_tg_fin = VALUES(ver_tg_fin)
+            """
+
+            db.cursor.execute(
+                query_confort,
+                (
+                    id_visita,
+                    dato_cierre[0],
+                    dato_cierre[1],
+                    dato_cierre[2],
+                ),
+            )
+
         db.connection.commit()
         return True
     except Exception as e:
-        print("Error al actualizar la visita:", e)
+        logging.error("Error al actualizar el cierre de la visita: %s", e)
+        if db.connection:
+            db.connection.rollback()
         return False
     finally:
         db.close()
