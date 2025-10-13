@@ -257,6 +257,84 @@ else:
             raise ValueError(f"La columna '{columna}' no se encontró en el DataFrame.")
 
 
+    def obtener_opciones_visita(df):
+        """Genera una lista de visitas disponibles para un centro de trabajo."""
+        if df.empty:
+            return []
+
+        columnas_prioritarias = ["Folio", "Visita", "NumeroVisita", "IdVisita"]
+        columna_seleccionada = next((col for col in columnas_prioritarias if col in df.columns), None)
+
+        if not columna_seleccionada:
+            return []
+
+        opciones = []
+        for valor, grupo in df.groupby(columna_seleccionada):
+            if pd.isna(valor):
+                continue
+
+            valor_str = str(valor)
+            descripcion = [f"{columna_seleccionada}: {valor_str}"]
+
+            if "Fecha_Inicio" in grupo.columns and not grupo["Fecha_Inicio"].dropna().empty:
+                fecha_inicio = grupo["Fecha_Inicio"].dropna().astype(str).iloc[0]
+                descripcion.append(f"Inicio: {fecha_inicio}")
+
+            if "Fecha_Fin" in grupo.columns and not grupo["Fecha_Fin"].dropna().empty:
+                fecha_fin = grupo["Fecha_Fin"].dropna().astype(str).iloc[0]
+                descripcion.append(f"Fin: {fecha_fin}")
+
+            opciones.append({
+                "id": valor_str,
+                "label": " | ".join(descripcion),
+                "column": columna_seleccionada,
+            })
+
+        return sorted(opciones, key=lambda x: x["label"])
+
+
+    def filtrar_por_visita(df, visita_info):
+        """Filtra un DataFrame según la visita seleccionada."""
+        if df is None or df.empty or not visita_info:
+            return df.copy() if isinstance(df, pd.DataFrame) else df
+
+        visita_valor = str(visita_info.get("id"))
+        columnas_a_probar = [visita_info.get("column"), "Folio", "Visita", "NumeroVisita", "IdVisita"]
+
+        for columna in columnas_a_probar:
+            if columna and isinstance(df, pd.DataFrame) and columna in df.columns:
+                try:
+                    filtro = df[columna].astype(str) == visita_valor
+                except Exception:
+                    filtro = df[columna] == visita_valor
+                filtrado = df.loc[filtro]
+                if not filtrado.empty:
+                    return filtrado.copy()
+        return df.copy() if isinstance(df, pd.DataFrame) else df
+
+
+    def aplicar_filtro_visita(visita_info):
+        """Actualiza los DataFrames almacenados en sesión según la visita seleccionada."""
+        claves_a_filtrar = [
+            "df_res_com",
+            "df_resultados",
+            "df_resultados_porcentaje",
+            "df_porcentajes_niveles",
+            "top_glosas",
+            "combined_df_base_complet3",
+            "summary_df",
+            "df_resumen",
+            "df_res_dimTE3",
+        ]
+
+        for clave in claves_a_filtrar:
+            clave_original = f"{clave}_original"
+            df_original = st.session_state.get(clave_original)
+
+            if isinstance(df_original, pd.DataFrame):
+                st.session_state[clave] = filtrar_por_visita(df_original, visita_info)
+
+
 
 
         ############### Parte 2: Definición de Tablas y Búsqueda por CUV ################
@@ -295,6 +373,10 @@ else:
     for var in ['combined_df_base_complet3', 'df_res_com', 'summary_df', 'df_porcentajes_niveles', 'df_res_dimTE3','confirmadas_df',
                 'df_resumen', 'df_resultados_porcentaje', 'top_glosas', 'df_ciiu', 'df_recomendaciones', 'df_resultados', 'interpretaciones_df']:
         st.session_state.setdefault(var, pd.DataFrame())
+
+    st.session_state.setdefault('visitas_disponibles', [])
+    st.session_state.setdefault('selected_visit_id', None)
+    st.session_state.setdefault('selected_visit_info', None)
 
 
     if 'interpretaciones_df' not in st.session_state or st.session_state['interpretaciones_df'].empty:
@@ -358,88 +440,86 @@ else:
             st.session_state.df_ciiu = resultados.get("df_ciiu", pd.DataFrame())
             st.session_state.df_recomendaciones = resultados.get("df_recomendaciones", pd.DataFrame())
 
-            # OPCIONAL: Guardar el CUV seleccionado en session_state, si se necesita
-            st.session_state.selected_cuv = cuv_valor
+            # Guardar copias originales para permitir el filtrado por visita
+            claves_para_copiar = [
+                "combined_df_base_complet3",
+                "summary_df",
+                "df_porcentajes_niveles",
+                "df_res_dimTE3",
+                "df_resumen",
+                "df_resultados_porcentaje",
+                "top_glosas",
+                "df_resultados",
+                "df_res_com",
+            ]
 
-            # A partir de aquí, todos los datos ya están filtrados por el CUV y disponibles en st.session_state.
-            # No volver a filtrar por CUV en el resto del código.
-
-            df_ciiu = st.session_state.df_ciiu
-            codigo_ciiu = extraer_codigo_ciiu(st.session_state.df_res_com)
-
-            if codigo_ciiu is not None:
-                st.write(f"**Código CIIU Extraído:** {codigo_ciiu}")
-            else:
-                st.error(f"No se pudo determinar el valor de CIIU para el CUV {cuv_valor}.")
-
-            # Continuar con el procesamiento solo si df_res_com no está vacío
-            if not st.session_state.df_res_com.empty:
-                # Asegurar que ciertas columnas sean de tipo string
-                if 'CUV' in st.session_state.df_res_com.columns:
-                    st.session_state.df_res_com['CUV'] = st.session_state.df_res_com['CUV'].astype(str)
-
-                # Mostrar las fechas antes de la conversión
-                st.subheader("Fechas Antes de la Conversión")
-                st.write("Fecha_Inicio:", st.session_state.df_res_com['Fecha_Inicio'].head())
-                st.write("Fecha_Fin:", st.session_state.df_res_com['Fecha_Fin'].head())
-
-                # Mostrar algunos ejemplos de las fechas
-                st.write("Ejemplos de 'Fecha_Inicio':")
-                st.write(st.session_state.df_res_com['Fecha_Inicio'].head())
-
-                st.write("Ejemplos de 'Fecha_Fin':")
-                st.write(st.session_state.df_res_com['Fecha_Fin'].head())
-
-
-                # Procesar columnas de fecha
-                columnas_fecha = ['Fecha_Inicio', 'Fecha_Fin']
-                try:
-                    for columna in columnas_fecha:
-                        st.session_state.df_res_com = procesar_columna_fecha(st.session_state.df_res_com, columna)
-                except ValueError as e:
-                    st.error(e)
-            else:
-                st.info("No se encontraron registros en 'Filas Resultados' para el CUV proporcionado.")
-
-            # Mostrar las fechas después de la conversión
-            st.subheader("Fechas Después de la Conversión")
-            st.write("Fecha_Inicio:", st.session_state.df_res_com['Fecha_Inicio'].head())
-            st.write("Fecha_Fin:", st.session_state.df_res_com['Fecha_Fin'].head())
-
-
-            # Visualización básica de los resultados
-            st.subheader("Filas Resultados (CUV y Folio)")
-            if not st.session_state.df_resultados.empty:
-                st.dataframe(st.session_state.df_resultados)
-            else:
-                st.info("No se encontraron registros en 'Filas Resultados' para el CUV proporcionado.")
-
-            st.subheader("Filas Resultados (Todas las Columnas)")
-            if not st.session_state.df_res_com.empty:
-                st.dataframe(st.session_state.df_res_com)
-            else:
-                st.info("No se encontraron registros en 'Filas Resultados (Todas las Columnas)' para el CUV proporcionado.")
-
-            # Visualizar las otras tablas consultadas
-            otras_tablas = {
-                "BaseCompleta": st.session_state.combined_df_base_complet3,
-                "Summary": st.session_state.summary_df,
-                "Porcentajes Niveles": st.session_state.df_porcentajes_niveles,
-                "Res Dim TE3": st.session_state.df_res_dimTE3,
-                "Resumen": st.session_state.df_resumen,
-                "Resultado": st.session_state.df_resultados_porcentaje,
-                "Top Glosas": st.session_state.top_glosas,
-                "CIIU": st.session_state.df_ciiu,
-                "Recomendaciones": st.session_state.df_recomendaciones
-            }
-
-            for nombre, df in otras_tablas.items():
-                st.subheader(nombre)
-                if not df.empty:
-                    st.dataframe(df)
+            for clave in claves_para_copiar:
+                valor = st.session_state.get(clave)
+                if isinstance(valor, pd.DataFrame):
+                    st.session_state[f"{clave}_original"] = valor.copy()
                 else:
-                    st.info(f"No se encontraron registros en '{nombre}' para el CUV proporcionado.")
+                    st.session_state[f"{clave}_original"] = valor
 
+            st.session_state.selected_cuv = cuv_valor
+            st.session_state.selected_visit_id = None
+            st.session_state.selected_visit_info = None
+
+            visitas = obtener_opciones_visita(st.session_state.df_res_com)
+            st.session_state.visitas_disponibles = visitas
+
+            if visitas:
+                st.info("Selecciona la visita que deseas editar en el menú desplegable.")
+            else:
+                st.info("Se cargaron los datos del CUV. No se encontraron visitas diferenciadas para seleccionar.")
+
+
+    visitas_disponibles = st.session_state.get("visitas_disponibles", [])
+
+    if visitas_disponibles:
+        labels = [opcion["label"] for opcion in visitas_disponibles]
+        visita_actual_id = st.session_state.get("selected_visit_id")
+        indice_por_defecto = 0
+        if visita_actual_id:
+            indice_por_defecto = next(
+                (i for i, opcion in enumerate(visitas_disponibles) if opcion["id"] == visita_actual_id),
+                0,
+            )
+
+        seleccion_label = st.selectbox(
+            "Selecciona la visita a editar",
+            labels,
+            index=indice_por_defecto,
+        )
+
+        visita_seleccionada = next(
+            (opcion for opcion in visitas_disponibles if opcion["label"] == seleccion_label),
+            None,
+        )
+
+        if visita_seleccionada and visita_seleccionada["id"] != st.session_state.get("selected_visit_id"):
+            st.session_state.selected_visit_id = visita_seleccionada["id"]
+            st.session_state.selected_visit_info = visita_seleccionada
+            aplicar_filtro_visita(visita_seleccionada)
+    elif st.session_state.get("selected_cuv") and not visitas_disponibles:
+        # Si no existen visitas diferenciadas, asegurarse de utilizar los datos originales completos.
+        for clave in [
+            "combined_df_base_complet3",
+            "summary_df",
+            "df_porcentajes_niveles",
+            "df_res_dimTE3",
+            "df_resumen",
+            "df_resultados_porcentaje",
+            "top_glosas",
+            "df_resultados",
+            "df_res_com",
+        ]:
+            clave_original = f"{clave}_original"
+            if isinstance(st.session_state.get(clave_original), pd.DataFrame):
+                st.session_state[clave] = st.session_state[clave_original].copy()
+
+    if st.session_state.get("selected_visit_info") and not st.session_state.df_res_com.empty:
+        # Asegurar que el filtrado se aplique en cada rerun
+        aplicar_filtro_visita(st.session_state.selected_visit_info)
 
     combined_df_base_complet3 = st.session_state.combined_df_base_complet3
     summary_df = st.session_state.summary_df
@@ -453,11 +533,67 @@ else:
     df_res_com = st.session_state.df_res_com
     df_resultados = st.session_state.df_resultados
 
-    #for col in df.select_dtypes(include='object').columns:
-    #    if df[col].str.isnumeric().all():
-    #        df[col] = pd.to_numeric(df[col], errors='coerce')
-    #    else:
-    #        df[col] = df[col].astype(str).fillna('')
+    if st.session_state.get("selected_cuv"):
+        st.header(f"Resultados para CUV: {st.session_state.selected_cuv}")
+
+    codigo_ciiu = extraer_codigo_ciiu(df_res_com)
+
+    if codigo_ciiu is not None:
+        st.write(f"**Código CIIU Extraído:** {codigo_ciiu}")
+    elif st.session_state.get("selected_cuv"):
+        st.error(f"No se pudo determinar el valor de CIIU para el CUV {st.session_state.selected_cuv}.")
+
+    if not df_res_com.empty:
+        if 'CUV' in df_res_com.columns:
+            st.session_state.df_res_com['CUV'] = df_res_com['CUV'].astype(str)
+
+        st.subheader("Fechas Antes de la Conversión")
+        st.write("Fecha_Inicio:", df_res_com.get('Fecha_Inicio', pd.Series()).head())
+        st.write("Fecha_Fin:", df_res_com.get('Fecha_Fin', pd.Series()).head())
+
+        columnas_fecha = ['Fecha_Inicio', 'Fecha_Fin']
+        try:
+            for columna in columnas_fecha:
+                st.session_state.df_res_com = procesar_columna_fecha(st.session_state.df_res_com, columna)
+        except ValueError as e:
+            st.error(e)
+
+        st.subheader("Fechas Después de la Conversión")
+        st.write("Fecha_Inicio:", st.session_state.df_res_com.get('Fecha_Inicio', pd.Series()).head())
+        st.write("Fecha_Fin:", st.session_state.df_res_com.get('Fecha_Fin', pd.Series()).head())
+    elif st.session_state.get("selected_cuv"):
+        st.info("No se encontraron registros en 'Filas Resultados' para el CUV proporcionado.")
+
+    st.subheader("Filas Resultados (CUV y Folio)")
+    if not df_resultados.empty:
+        st.dataframe(df_resultados)
+    else:
+        st.info("No se encontraron registros en 'Filas Resultados' para el CUV proporcionado.")
+
+    st.subheader("Filas Resultados (Todas las Columnas)")
+    if not st.session_state.df_res_com.empty:
+        st.dataframe(st.session_state.df_res_com)
+    else:
+        st.info("No se encontraron registros en 'Filas Resultados (Todas las Columnas)' para el CUV proporcionado.")
+
+    otras_tablas = {
+        "BaseCompleta": combined_df_base_complet3,
+        "Summary": summary_df,
+        "Porcentajes Niveles": df_porcentajes_niveles,
+        "Res Dim TE3": df_res_dimTE3,
+        "Resumen": df_resumen,
+        "Resultado": df_resultados_porcentaje,
+        "Top Glosas": top_glosas,
+        "CIIU": df_ciiu,
+        "Recomendaciones": df_recomendaciones
+    }
+
+    for nombre, df in otras_tablas.items():
+        st.subheader(nombre)
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            st.dataframe(df)
+        else:
+            st.info(f"No se encontraron registros en '{nombre}' para el CUV proporcionado.")
 
 
     ############### Parte 3: Procesamiento posterior a la búsqueda, Funciones de Formateo y Auxiliares ###############
