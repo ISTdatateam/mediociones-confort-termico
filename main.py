@@ -1,6 +1,7 @@
+import logging
 import streamlit as st
 import pandas as pd
-from datetime import date, time as dt_time
+from datetime import date, datetime, time as dt_time, timedelta
 import time
 import os
 import io
@@ -11,8 +12,65 @@ from utils.helpers import (autenticar_usuario, get_ct, precompletar_campos_ct, i
                            check_resultado_pmv, get_areas_options, get_motivo_eval, get_equipo_vel, get_equipo_temp,
                            get_sector_especifico, get_puesto_trabajo, get_posicion_trabajador,
                            get_vestimenta_trabajador, comparar_patron, get_visitas_por_cuv, get_visita,
-                           get_mediciones, actualizar_visita_inicio, actualizar_medicion, get_equipo_dicc_por_id,
-                           normalizar_fecha_mysql, normalizar_hora_mysql)
+                           get_mediciones, actualizar_visita_inicio, actualizar_medicion, get_equipo_dicc_por_id)
+
+try:
+    from utils.helpers import normalizar_fecha_mysql, normalizar_hora_mysql
+except ImportError:
+    logging.warning(
+        "No se pudieron importar las utilidades de normalización desde utils.helpers; "
+        "se utilizarán implementaciones locales de respaldo."
+    )
+
+    def normalizar_fecha_mysql(valor):
+        if valor is None or valor == "":
+            return None
+
+        if isinstance(valor, date) and not isinstance(valor, datetime):
+            return valor
+
+        if isinstance(valor, datetime):
+            return valor.date()
+
+        if isinstance(valor, str):
+            for formato in ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d"):
+                try:
+                    return datetime.strptime(valor, formato).date()
+                except ValueError:
+                    continue
+            try:
+                return date.fromisoformat(valor)
+            except ValueError:
+                return valor
+
+        return valor
+
+    def normalizar_hora_mysql(valor):
+        if valor is None or valor == "":
+            return None
+
+        if isinstance(valor, dt_time):
+            return valor
+
+        if isinstance(valor, datetime):
+            return valor.time()
+
+        if isinstance(valor, timedelta):
+            base_datetime = datetime.combine(date.today(), dt_time.min) + valor
+            return base_datetime.time()
+
+        if isinstance(valor, str):
+            for formato in ("%H:%M:%S", "%H:%M"):
+                try:
+                    return datetime.strptime(valor, formato).time()
+                except ValueError:
+                    continue
+            try:
+                return dt_time.fromisoformat(valor)
+            except ValueError:
+                return valor
+
+        return valor
 from pythermalcomfort.models import pmv_ppd_iso
 from utils.informe import generar_informe
 
