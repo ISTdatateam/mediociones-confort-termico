@@ -870,6 +870,7 @@ def main():
         # CAJA 1: DATOS DE LA VISITA
         # ============================================
         visita_prefill = st.session_state.get("visita_prefill", {})
+        id_visita = st.session_state.get("id_visita")
 
         with st.form("form_datos_visita"):
             st.subheader("Datos de la visita")
