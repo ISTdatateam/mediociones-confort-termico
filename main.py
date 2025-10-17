@@ -6,14 +6,43 @@ import time
 import os
 import io
 from decimal import Decimal
+import math
 from dotenv import load_dotenv
 from streamlit_cookies_controller import CookieController
-from utils.helpers import (autenticar_usuario, get_ct, precompletar_campos_ct, interpreter_pmv, get_cuv,
-                           guardar_visita_inicio, guardar_visita_cierre, logout, insertar_medicion, get_met,
-                           check_resultado_pmv, get_areas_options, get_motivo_eval, get_equipo_vel, get_equipo_temp,
-                           get_sector_especifico, get_puesto_trabajo, get_posicion_trabajador,
-                           get_vestimenta_trabajador, comparar_patron, get_visitas_por_cuv, get_visita,
-                           get_mediciones, actualizar_visita_inicio, actualizar_medicion, get_equipo_dicc_por_id)
+from utils.helpers import (
+    autenticar_usuario,
+    get_ct,
+    precompletar_campos_ct,
+    interpreter_pmv,
+    get_cuv,
+    guardar_visita_inicio,
+    guardar_visita_cierre,
+    logout,
+    insertar_medicion,
+    get_met,
+    check_resultado_pmv,
+    get_areas_options,
+    get_motivo_eval,
+    get_equipo_vel,
+    get_equipo_temp,
+    get_sector_especifico,
+    get_puesto_trabajo,
+    get_posicion_trabajador,
+    get_vestimenta_trabajador,
+    comparar_patron,
+    get_visitas_por_cuv,
+    get_visita,
+    get_mediciones,
+    actualizar_visita_inicio,
+    actualizar_medicion,
+    get_equipo_dicc_por_id,
+    insertar_area_ventilacion,
+    obtener_areas_ventilacion_por_visita,
+    obtener_puntos_ventilacion_por_area,
+    obtener_puntos_ventilacion_por_visita,
+    insertar_punto_ventilacion,
+    recalcular_totales_area_ventilacion,
+)
 
 try:
     from utils.helpers import normalizar_fecha_mysql, normalizar_hora_mysql
@@ -120,11 +149,14 @@ def reset_visita_context():
     st.session_state["cierre_prefill"] = {}
     st.session_state["mediciones_ids"] = {}
     st.session_state["areas_data"] = {}
+    st.session_state["vent_areas"] = []
+    st.session_state["vent_puntos"] = {}
     st.session_state.pop("cierre", None)
     st.session_state.pop("visita_finalizada", None)
     st.session_state.pop("visita_a_cargar", None)
     st.session_state.pop("prefill_ready", None)
     st.session_state.pop("visita_seleccionada", None)
+    st.session_state.pop("vent_area_seleccionada", None)
     st.session_state["visitas_disponibles"] = pd.DataFrame()
 
     for i in range(1, 11):
@@ -239,48 +271,60 @@ def cargar_visita_existente(id_visita):
         st.session_state["mostrar_caja_verificacion"] = False
         st.session_state["cierre_prefill"] = {"note_visita": visita.get("note_visita", "")}
         st.session_state.pop("cierre", None)
+        st.session_state["vent_areas"] = obtener_areas_ventilacion_por_visita(id_visita)
+        puntos_visita = obtener_puntos_ventilacion_por_visita(id_visita)
+        puntos_por_area = {}
+        for punto in puntos_visita:
+            puntos_por_area.setdefault(punto.get("area_id"), []).append(punto)
+        st.session_state["vent_puntos"] = puntos_por_area
+        if st.session_state["vent_areas"] and "vent_area_seleccionada" not in st.session_state:
+            st.session_state["vent_area_seleccionada"] = st.session_state["vent_areas"][0]["area_id"]
 
-    mediciones_df = get_mediciones(id_visita)
-    st.session_state["mediciones_ids"] = {}
-    st.session_state["areas_data"] = {}
-    for idx, medicion in enumerate(mediciones_df.to_dict("records")):
-        st.session_state["mediciones_ids"][idx] = medicion.get("id_medicion")
-        area_normalizada = {
-            **medicion,
-            "t_bul_seco": ensure_float(medicion.get("t_bul_seco")),
-            "t_globo": ensure_float(medicion.get("t_globo")),
-            "hum_rel": ensure_float(medicion.get("hum_rel")),
-            "vel_air": ensure_float(medicion.get("vel_air")),
-        }
-        st.session_state["areas_data"][idx] = area_normalizada
-        form_idx = idx + 1
-        st.session_state[f"area_sector_{form_idx}"] = area_normalizada.get("nombre_area", "Seleccione...")
-        st.session_state[f"espec_sector_{form_idx}"] = area_normalizada.get("sector_especifico", "Seleccione...")
-        st.session_state[f"puesto_trabajo_{form_idx}"] = area_normalizada.get("puesto_trabajo", "Seleccione...")
-        st.session_state[f"pos_trabajador_{form_idx}"] = area_normalizada.get("posicion_trabajador", "Seleccione...")
-        st.session_state[f"vestimenta_{form_idx}"] = area_normalizada.get("vestimenta_trabajador", "Seleccione...")
-        st.session_state[f"tbs_{form_idx}"] = ensure_float(area_normalizada.get("t_bul_seco"), 0.0)
-        st.session_state[f"tg_{form_idx}"] = ensure_float(area_normalizada.get("t_globo"), 0.0)
-        st.session_state[f"hr_{form_idx}"] = ensure_float(area_normalizada.get("hum_rel"), 0.0)
-        st.session_state[f"vel_aire_{form_idx}"] = ensure_float(area_normalizada.get("vel_air"), 0.0)
-        st.session_state[f"techumbre_{form_idx}"] = "Sí" if medicion.get("cond_techumbre") else "No"
-        st.session_state[f"obs_techumbre_{form_idx}"] = medicion.get("obs_techumbre", "")
-        st.session_state[f"paredes_{form_idx}"] = "Sí" if medicion.get("cond_paredes") else "No"
-        st.session_state[f"obs_paredes_{form_idx}"] = medicion.get("obs_paredes", "")
-        st.session_state[f"ventanales_{form_idx}"] = "Sí" if medicion.get("cond_vantanal") else "No"
-        st.session_state[f"obs_ventanales_{form_idx}"] = medicion.get("obs_ventanal", "")
-        st.session_state[f"aire_acond_{form_idx}"] = "Sí" if medicion.get("cond_aire_acond") else "No"
-        st.session_state[f"obs_aire_acond_{form_idx}"] = medicion.get("obs_aire_acond", "")
-        st.session_state[f"ventiladores_{form_idx}"] = "Sí" if medicion.get("cond_ventiladores") else "No"
-        st.session_state[f"obs_ventiladores_{form_idx}"] = medicion.get("obs_ventiladores", "")
-        st.session_state[f"inyeccion_extrac_{form_idx}"] = "Sí" if medicion.get("cond_inyeccion_extraccion") else "No"
-        st.session_state[f"obs_inyeccion_{form_idx}"] = medicion.get("obs_inyeccion_extraccion", "")
-        st.session_state[f"ventanas_{form_idx}"] = "Sí" if medicion.get("cond_ventanas") else "No"
-        st.session_state[f"obs_ventanas_{form_idx}"] = medicion.get("obs_ventanas", "")
-        st.session_state[f"puertas_{form_idx}"] = "Sí" if medicion.get("cond_puertas") else "No"
-        st.session_state[f"obs_puertas_{form_idx}"] = medicion.get("obs_puertas", "")
-        st.session_state[f"otras_{form_idx}"] = "Sí" if medicion.get("cond_otras") else "No"
-        st.session_state[f"obs_otras_{form_idx}"] = medicion.get("obs_otras", "")
+    if es_confort:
+        mediciones_df = get_mediciones(id_visita)
+        st.session_state["mediciones_ids"] = {}
+        st.session_state["areas_data"] = {}
+        for idx, medicion in enumerate(mediciones_df.to_dict("records")):
+            st.session_state["mediciones_ids"][idx] = medicion.get("id_medicion")
+            area_normalizada = {
+                **medicion,
+                "t_bul_seco": ensure_float(medicion.get("t_bul_seco")),
+                "t_globo": ensure_float(medicion.get("t_globo")),
+                "hum_rel": ensure_float(medicion.get("hum_rel")),
+                "vel_air": ensure_float(medicion.get("vel_air")),
+            }
+            st.session_state["areas_data"][idx] = area_normalizada
+            form_idx = idx + 1
+            st.session_state[f"area_sector_{form_idx}"] = area_normalizada.get("nombre_area", "Seleccione...")
+            st.session_state[f"espec_sector_{form_idx}"] = area_normalizada.get("sector_especifico", "Seleccione...")
+            st.session_state[f"puesto_trabajo_{form_idx}"] = area_normalizada.get("puesto_trabajo", "Seleccione...")
+            st.session_state[f"pos_trabajador_{form_idx}"] = area_normalizada.get("posicion_trabajador", "Seleccione...")
+            st.session_state[f"vestimenta_{form_idx}"] = area_normalizada.get("vestimenta_trabajador", "Seleccione...")
+            st.session_state[f"tbs_{form_idx}"] = ensure_float(area_normalizada.get("t_bul_seco"), 0.0)
+            st.session_state[f"tg_{form_idx}"] = ensure_float(area_normalizada.get("t_globo"), 0.0)
+            st.session_state[f"hr_{form_idx}"] = ensure_float(area_normalizada.get("hum_rel"), 0.0)
+            st.session_state[f"vel_aire_{form_idx}"] = ensure_float(area_normalizada.get("vel_air"), 0.0)
+            st.session_state[f"techumbre_{form_idx}"] = "Sí" if medicion.get("cond_techumbre") else "No"
+            st.session_state[f"obs_techumbre_{form_idx}"] = medicion.get("obs_techumbre", "")
+            st.session_state[f"paredes_{form_idx}"] = "Sí" if medicion.get("cond_paredes") else "No"
+            st.session_state[f"obs_paredes_{form_idx}"] = medicion.get("obs_paredes", "")
+            st.session_state[f"ventanales_{form_idx}"] = "Sí" if medicion.get("cond_vantanal") else "No"
+            st.session_state[f"obs_ventanales_{form_idx}"] = medicion.get("obs_ventanal", "")
+            st.session_state[f"aire_acond_{form_idx}"] = "Sí" if medicion.get("cond_aire_acond") else "No"
+            st.session_state[f"obs_aire_acond_{form_idx}"] = medicion.get("obs_aire_acond", "")
+            st.session_state[f"ventiladores_{form_idx}"] = "Sí" if medicion.get("cond_ventiladores") else "No"
+            st.session_state[f"obs_ventiladores_{form_idx}"] = medicion.get("obs_ventiladores", "")
+            st.session_state[f"inyeccion_extrac_{form_idx}"] = "Sí" if medicion.get("cond_inyeccion_extraccion") else "No"
+            st.session_state[f"obs_inyeccion_{form_idx}"] = medicion.get("obs_inyeccion_extraccion", "")
+            st.session_state[f"ventanas_{form_idx}"] = "Sí" if medicion.get("cond_ventanas") else "No"
+            st.session_state[f"obs_ventanas_{form_idx}"] = medicion.get("obs_ventanas", "")
+            st.session_state[f"puertas_{form_idx}"] = "Sí" if medicion.get("cond_puertas") else "No"
+            st.session_state[f"obs_puertas_{form_idx}"] = medicion.get("obs_puertas", "")
+            st.session_state[f"otras_{form_idx}"] = "Sí" if medicion.get("cond_otras") else "No"
+            st.session_state[f"obs_otras_{form_idx}"] = medicion.get("obs_otras", "")
+    else:
+        st.session_state["mediciones_ids"] = {}
+        st.session_state["areas_data"] = {}
 
     st.session_state["status_message"] = f"Visita {id_visita} cargada para edición."
     st.session_state["prefill_ready"] = True
@@ -312,6 +356,364 @@ def show_login():
             st.rerun()
         else:
             st.error("Usuario o contraseña incorrectos.")
+
+
+def mostrar_formularios_ventilacion():
+    st.subheader("Áreas de ventilación")
+
+    id_visita = st.session_state.get("id_visita")
+    if not id_visita:
+        st.warning("Debes guardar primero los datos generales de la visita antes de registrar áreas de ventilación.")
+        return
+
+    centro_raw = st.session_state.get("input_cuv_str")
+    try:
+        centro_id = int(centro_raw) if centro_raw not in (None, "") else None
+    except ValueError:
+        centro_id = None
+
+    areas_guardadas = st.session_state.get("vent_areas", [])
+
+    with st.form("form_area_ventilacion"):
+        col_a, col_b = st.columns(2)
+        with col_a:
+            area_id = st.text_input("Identificador del área (AreaId)")
+            codigo_area = st.text_input("Código del área dentro del centro")
+            nombre_area = st.text_input("Nombre del área o dependencia")
+            uso = st.text_input("Uso principal del recinto")
+            piso_nivel = st.text_input("Piso o nivel")
+            largo_m = st.number_input("Largo (m)", min_value=0.0, step=0.1)
+            ancho_m = st.number_input("Ancho (m)", min_value=0.0, step=0.1)
+            alto_m = st.number_input("Altura (m)", min_value=0.0, step=0.1)
+            aforo_permitido = st.number_input("Aforo máximo permitido (personas)", min_value=0, step=1)
+            ocupacion_habitual = st.number_input("Ocupación habitual (personas)", min_value=0, step=1)
+        with col_b:
+            m3_porpersona_594 = st.number_input("Referencia m³/persona (DS594)", min_value=0.0, value=10.0, step=0.5)
+            m3_porpersona_hora_594 = st.number_input("Referencia m³/persona·h (DS594)", min_value=0.0, value=20.0, step=0.5)
+            recambio_hora_594_min = st.number_input("Recambio/h mínimo (DS594)", min_value=0.0, value=6.0, step=0.5)
+            recambio_hora_594_max = st.number_input("Recambio/h máximo (DS594)", min_value=0.0, value=60.0, step=1.0)
+            ventilacion_tipo = st.selectbox(
+                "Tipo de ventilación",
+                options=["Natural", "Mecánica", "Mixta"],
+            )
+            ventilacion_sistema = st.text_input("Nombre o identificador del sistema", value="")
+            ventilacion_estado = st.selectbox(
+                "Estado operativo",
+                options=["Operativa", "En mantención", "Fuera de servicio"],
+            )
+            aberturas = st.text_area("Aberturas relevantes", height=80)
+            croquis_url = st.text_input("URL de croquis o plano")
+            observaciones = st.text_area("Observaciones del área", height=80)
+
+        submit_area = st.form_submit_button(
+            label="Guardar área",
+            type="primary",
+            use_container_width=True,
+            icon=":material/save:",
+        )
+
+    if submit_area:
+        if not centro_id:
+            st.error("No se ha identificado el centro de trabajo. Verifica el CUV seleccionado.")
+        elif not area_id or not codigo_area or not nombre_area:
+            st.error("Los campos Identificador, Código y Nombre del área son obligatorios.")
+        else:
+            volumen_m3 = None
+            if largo_m and ancho_m and alto_m:
+                volumen_m3 = largo_m * ancho_m * alto_m
+
+            m3_porpersona = None
+            if volumen_m3 is not None and aforo_permitido > 0:
+                m3_porpersona = volumen_m3 / aforo_permitido
+
+            m3_porpersona_cumple = 1 if (m3_porpersona is not None and m3_porpersona >= m3_porpersona_594) else 0
+
+            area_data = {
+                "area_id": area_id.strip(),
+                "visita_id": id_visita,
+                "centro_id": centro_id,
+                "codigo_area": codigo_area.strip(),
+                "nombre_area": nombre_area.strip(),
+                "uso": uso.strip(),
+                "piso_nivel": piso_nivel.strip(),
+                "largo_m": largo_m,
+                "ancho_m": ancho_m,
+                "alto_m": alto_m,
+                "volumen_m3": volumen_m3,
+                "aforo_permitido": aforo_permitido,
+                "m3_porpersona": m3_porpersona,
+                "m3_porpersona_594": m3_porpersona_594,
+                "m3_porpersona_cumple": m3_porpersona_cumple,
+                "caudal_inyeccion_total": 0.0,
+                "caudal_extraccion_total": 0.0,
+                "m3_porpersona_hora": None,
+                "m3_porpersona_hora_594": m3_porpersona_hora_594,
+                "m3_porpersona_hora_cumple": 0,
+                "recambio_hora_594_min": recambio_hora_594_min,
+                "recambio_hora_594_max": recambio_hora_594_max,
+                "recambio_hora": None,
+                "recambio_hora_cumple": 0,
+                "ocupacion_habitual": ocupacion_habitual,
+                "ventilacion_tipo": ventilacion_tipo,
+                "ventilacion_sistema": ventilacion_sistema.strip(),
+                "ventilacion_estado": ventilacion_estado,
+                "aberturas": aberturas.strip(),
+                "croquis_url": croquis_url.strip(),
+                "observaciones": observaciones.strip(),
+            }
+
+            if insertar_area_ventilacion(area_data):
+                recalcular_totales_area_ventilacion(area_data["area_id"])
+                st.session_state["vent_areas"] = obtener_areas_ventilacion_por_visita(id_visita)
+                puntos_actualizados = {}
+                for area in st.session_state["vent_areas"]:
+                    puntos_actualizados[area["area_id"]] = obtener_puntos_ventilacion_por_area(area["area_id"])
+                st.session_state["vent_puntos"] = puntos_actualizados
+                st.session_state["vent_area_seleccionada"] = area_data["area_id"]
+                st.success(f"Área {area_data['area_id']} guardada correctamente.")
+                st.rerun()
+            else:
+                st.error("No fue posible guardar el área. Revisa los datos e inténtalo nuevamente.")
+
+    if areas_guardadas:
+        df_areas = pd.DataFrame(areas_guardadas)
+        columnas = [
+            "area_id",
+            "codigo_area",
+            "nombre_area",
+            "volumen_m3",
+            "aforo_permitido",
+            "m3_porpersona",
+            "m3_porpersona_cumple",
+            "caudal_inyeccion_total",
+            "caudal_extraccion_total",
+            "m3_porpersona_hora",
+            "m3_porpersona_hora_cumple",
+            "recambio_hora",
+            "recambio_hora_cumple",
+        ]
+        columnas_disponibles = [col for col in columnas if col in df_areas.columns]
+        df_vista = df_areas[columnas_disponibles].copy()
+        if "m3_porpersona_cumple" in df_vista.columns:
+            df_vista["m3_porpersona_cumple"] = df_vista["m3_porpersona_cumple"].map({1: "Cumple", 0: "No cumple"})
+        if "m3_porpersona_hora_cumple" in df_vista.columns:
+            df_vista["m3_porpersona_hora_cumple"] = df_vista["m3_porpersona_hora_cumple"].map({1: "Cumple", 0: "No cumple"})
+        if "recambio_hora_cumple" in df_vista.columns:
+            df_vista["recambio_hora_cumple"] = df_vista["recambio_hora_cumple"].map({1: "Cumple", 0: "No cumple"})
+        st.dataframe(df_vista, use_container_width=True)
+    else:
+        st.info("Aún no se han registrado áreas para esta visita.")
+
+    st.markdown("---")
+    st.subheader("Puntos de medición")
+
+    if not areas_guardadas:
+        st.info("Registra al menos un área para habilitar los puntos de medición.")
+        return
+
+    area_options = {f"{area['area_id']} - {area['nombre_area']}": area["area_id"] for area in areas_guardadas}
+    area_labels = list(area_options.keys())
+    seleccion_actual = st.session_state.get("vent_area_seleccionada")
+    if seleccion_actual:
+        try:
+            idx_area = area_labels.index(next(label for label, value in area_options.items() if value == seleccion_actual))
+        except StopIteration:
+            idx_area = 0
+    else:
+        idx_area = 0
+
+    etiqueta_area = st.selectbox("Selecciona el área para registrar el punto", options=area_labels, index=idx_area)
+    area_seleccionada = area_options[etiqueta_area]
+    st.session_state["vent_area_seleccionada"] = area_seleccionada
+
+    with st.form("form_punto_ventilacion"):
+        col1, col2 = st.columns(2)
+        with col1:
+            punto_id = st.text_input("Identificador del punto (PuntoId)")
+            codigo_punto = st.text_input("Código del punto")
+            tipo_punto = st.selectbox("Tipo de punto", options=["Inyeccion", "Extraccion"])
+            ubicacion_detalle = st.text_area("Ubicación y detalles", height=80)
+            altura_m = st.number_input("Altura de medición (m)", min_value=0.0, step=0.1)
+            distancia_fuente_m = st.number_input("Distancia a la fuente (m)", min_value=0.0, step=0.1)
+            conducto_largo_cm = st.number_input("Conducto largo (cm)", min_value=0.0, step=0.1)
+            conducto_ancho_cm = st.number_input("Conducto ancho (cm)", min_value=0.0, step=0.1)
+            conducto_diametro = st.number_input("Conducto diámetro (cm)", min_value=0.0, step=0.1)
+        with col2:
+            medicion_caudal_1 = st.number_input("Velocidad 1 (m/s)", min_value=0.0, step=0.01)
+            medicion_caudal_2 = st.number_input("Velocidad 2 (m/s)", min_value=0.0, step=0.01)
+            medicion_caudal_3 = st.number_input("Velocidad 3 (m/s)", min_value=0.0, step=0.01)
+            medicion_caudal_4 = st.number_input("Velocidad 4 (m/s)", min_value=0.0, step=0.01)
+            medicion_caudal_5 = st.number_input("Velocidad 5 (m/s)", min_value=0.0, step=0.01)
+            medicion_caudal_p = st.number_input("Velocidad promedio (m/s)", min_value=0.0, step=0.01)
+            condiciones_ocupacion = st.number_input("Personas presentes", min_value=0, step=1)
+            puertas_abiertas = st.selectbox("Puertas/ventanas abiertas", options=["No", "Sí"])
+            temperatura_c = st.number_input("Temperatura ambiente (°C)", min_value=-20.0, max_value=60.0, value=20.0, step=0.1)
+            humedad_relativa = st.number_input("Humedad relativa (%)", min_value=0.0, max_value=100.0, value=50.0, step=0.1)
+            fecha_medicion = st.date_input("Fecha de medición", value=date.today())
+            hora_medicion = st.time_input("Hora de medición")
+            croquis_punto = st.text_input("URL de apoyo (foto/croquis)")
+            observaciones_punto = st.text_area("Observaciones del punto", height=80)
+
+        submit_punto = st.form_submit_button(
+            label="Guardar punto de medición",
+            type="primary",
+            use_container_width=True,
+            icon=":material/save:",
+        )
+
+    if submit_punto:
+        if not punto_id or not codigo_punto:
+            st.error("Los campos Identificador y Código del punto son obligatorios.")
+        else:
+            velocidades = [
+                medicion_caudal_1,
+                medicion_caudal_2,
+                medicion_caudal_3,
+                medicion_caudal_4,
+                medicion_caudal_5,
+            ]
+            velocidades_validas = [v for v in velocidades if v > 0]
+            velocidad_promedio = medicion_caudal_p if medicion_caudal_p > 0 else (sum(velocidades_validas) / len(velocidades_validas) if velocidades_validas else 0)
+
+            seccion_cm2 = None
+            if conducto_diametro > 0:
+                seccion_cm2 = math.pi * (conducto_diametro / 2) ** 2
+            elif conducto_largo_cm > 0 and conducto_ancho_cm > 0:
+                seccion_cm2 = conducto_largo_cm * conducto_ancho_cm
+
+            caudal = None
+            if velocidad_promedio > 0 and seccion_cm2:
+                area_m2 = seccion_cm2 / 10000
+                caudal = velocidad_promedio * area_m2 * 3600
+
+            fecha_hora = None
+            if fecha_medicion and hora_medicion:
+                fecha_hora = datetime.combine(fecha_medicion, hora_medicion)
+
+            punto_data = {
+                "punto_id": punto_id.strip(),
+                "evaluacion_id": id_visita,
+                "area_id": area_seleccionada,
+                "codigo_punto": codigo_punto.strip(),
+                "tipo_punto": tipo_punto,
+                "ubicacion_detalle": ubicacion_detalle.strip(),
+                "altura_m": altura_m or None,
+                "distancia_fuente_m": distancia_fuente_m or None,
+                "conducto_largo_cm": conducto_largo_cm or None,
+                "conducto_ancho_cm": conducto_ancho_cm or None,
+                "conducto_diametro": conducto_diametro or None,
+                "seccion_conducto_cm2": seccion_cm2,
+                "medicion_caudal_1": medicion_caudal_1 or None,
+                "medicion_caudal_2": medicion_caudal_2 or None,
+                "medicion_caudal_3": medicion_caudal_3 or None,
+                "medicion_caudal_4": medicion_caudal_4 or None,
+                "medicion_caudal_5": medicion_caudal_5 or None,
+                "medicion_caudal_p": velocidad_promedio or None,
+                "caudal": caudal,
+                "fecha_hora": fecha_hora,
+                "condiciones_ocupacion": condiciones_ocupacion,
+                "puertas_ventanas_abiertas": 1 if puertas_abiertas == "Sí" else 0,
+                "temperatura_c": temperatura_c,
+                "humedad_relativa_pct": humedad_relativa,
+                "croquis_url": croquis_punto.strip(),
+                "observaciones": observaciones_punto.strip(),
+            }
+
+            if insertar_punto_ventilacion(punto_data):
+                recalcular_totales_area_ventilacion(area_seleccionada)
+                st.session_state["vent_puntos"][area_seleccionada] = obtener_puntos_ventilacion_por_area(area_seleccionada)
+                st.session_state["vent_areas"] = obtener_areas_ventilacion_por_visita(id_visita)
+                st.success(f"Punto {punto_data['punto_id']} guardado correctamente.")
+                st.rerun()
+            else:
+                st.error("No fue posible guardar el punto de medición. Revisa los datos ingresados.")
+
+    puntos_area = st.session_state.get("vent_puntos", {}).get(area_seleccionada, [])
+    if puntos_area:
+        df_puntos = pd.DataFrame(puntos_area)
+        columnas = [
+            "punto_id",
+            "codigo_punto",
+            "tipo_punto",
+            "seccion_conducto_cm2",
+            "medicion_caudal_p",
+            "caudal",
+            "fecha_hora",
+            "condiciones_ocupacion",
+            "puertas_ventanas_abiertas",
+        ]
+        columnas_disponibles = [col for col in columnas if col in df_puntos.columns]
+        df_vista = df_puntos[columnas_disponibles].copy()
+        if "puertas_ventanas_abiertas" in df_vista.columns:
+            df_vista["puertas_ventanas_abiertas"] = df_vista["puertas_ventanas_abiertas"].map({1: "Sí", 0: "No"})
+        st.dataframe(df_vista, use_container_width=True)
+    else:
+        st.info("El área seleccionada aún no tiene puntos registrados.")
+
+    st.markdown("---")
+    st.subheader("Cierre")
+
+    comentarios_default = st.session_state.get("cierre_prefill", {}).get("note_visita", "")
+    with st.form("form_cierre_ventilacion"):
+        comentarios_finales = st.text_area(
+            "Comentarios finales de la evaluación",
+            value=comentarios_default,
+            height=120,
+        )
+        submit_cierre = st.form_submit_button(
+            label="Guardar comentarios finales",
+            type="primary",
+            use_container_width=True,
+            icon=":material/check_circle:",
+        )
+
+    if submit_cierre:
+        datos_cierre = {
+            "note_visita": comentarios_finales.strip(),
+            "ver_tbs_fin": None,
+            "ver_tbh_fin": None,
+            "ver_tg_fin": None,
+        }
+        if guardar_visita_cierre(id_visita, datos_cierre, "ventilacion"):
+            st.session_state["cierre"] = {"Comentarios finales de evaluación": comentarios_finales.strip()}
+            st.session_state["cierre_prefill"] = {"note_visita": comentarios_finales.strip()}
+            st.success("Comentarios finales guardados correctamente.")
+            st.rerun()
+        else:
+            st.error("No fue posible guardar el cierre de la visita.")
+
+    st.markdown("---")
+    st.subheader("Finalizar visita")
+
+    visita_guardada = id_visita is not None
+    total_areas = len(st.session_state.get("vent_areas", []))
+    total_puntos = sum(len(puntos) for puntos in st.session_state.get("vent_puntos", {}).values())
+    cierre_completado = "cierre" in st.session_state
+
+    if visita_guardada and total_areas > 0 and total_puntos > 0 and cierre_completado:
+        if "visita_finalizada" not in st.session_state:
+            st.session_state["visita_finalizada"] = False
+
+        if not st.session_state["visita_finalizada"]:
+            if st.button("Finalizar visita", type="primary"):
+                st.session_state["visita_finalizada"] = True
+                st.success("Visita finalizada correctamente.")
+                st.rerun()
+
+        if st.session_state["visita_finalizada"]:
+            st.info(
+                "La generación automática de informes para evaluaciones de ventilación estará disponible próximamente."
+            )
+    else:
+        st.info("Debes completar todos los pasos antes de finalizar la visita:")
+        if not visita_guardada:
+            st.warning("La visita aún no ha sido guardada.")
+        if total_areas == 0:
+            st.warning("Registra al menos un área de ventilación.")
+        if total_puntos == 0:
+            st.warning("Registra al menos un punto de medición.")
+        if not cierre_completado:
+            st.warning("Guarda los comentarios finales de la evaluación.")
 
 
 def main():
@@ -768,19 +1170,8 @@ def main():
         # 3. Formulario 2: Mediciones de Áreas (Formularios Independientes)
         tipo_actual = st.session_state.get("visita_prefill", {}).get("tipo_evaluacion", "confort")
         if tipo_actual != "confort":
-            st.subheader("Mediciones")
-            st.info(
-                "El registro de mediciones para evaluaciones de ventilación estará disponible próximamente."
-            )
-            st.markdown("---")
-            st.subheader("Cierre")
-            st.info("El cierre de visitas para este tipo de evaluación se habilitará en futuras versiones.")
-            st.markdown("---")
-            st.subheader("Finalizar Visita")
-            st.warning(
-                "Para visitas de ventilación aún no es posible registrar mediciones ni finalizar el proceso desde la aplicación."
-            )
-            st.stop()
+            mostrar_formularios_ventilacion()
+            return
 
         st.subheader("Mediciones de Áreas")
         st.info("Completa y guarda cada área individualmente")

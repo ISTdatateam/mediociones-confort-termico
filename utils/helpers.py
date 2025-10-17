@@ -8,6 +8,7 @@ from streamlit_cookies_controller import CookieController
 import logging
 import pandas as pd
 from datetime import datetime, date, time as dt_time, timedelta
+import math
 
 
 def normalizar_fecha_mysql(valor):
@@ -355,10 +356,6 @@ def guardar_visita_inicio(visita_data, confort_data=None):
         equipo_temp_id = None
         equipo_vel_id = None
 
-        if tipo_evaluacion == "confort" and not confort_data:
-            logging.error("Se requieren datos de confort para guardar una visita de tipo confort.")
-            return None
-
         if tipo_evaluacion == "confort" and confort_data:
             equipo_temp_id = _obtener_id_equipo_por_dicc(db, confort_data.get("equipo_temp"))
             equipo_vel_id = _obtener_id_equipo_por_dicc(db, confort_data.get("equipo_vel_air"))
@@ -460,10 +457,6 @@ def actualizar_visita_inicio(id_visita, visita_data, confort_data=None):
         tipo_evaluacion = visita_data.get("tipo_evaluacion", "confort")
         equipo_temp_id = None
         equipo_vel_id = None
-
-        if tipo_evaluacion == "confort" and not confort_data:
-            logging.error("Se requieren datos de confort para actualizar una visita de tipo confort.")
-            return False
 
         if tipo_evaluacion == "confort" and confort_data:
             equipo_temp_id = _obtener_id_equipo_por_dicc(db, confort_data.get("equipo_temp"))
@@ -567,7 +560,7 @@ def actualizar_visita_inicio(id_visita, visita_data, confort_data=None):
                 )
 
                 db.cursor.execute(query_insert, params_insert)
-        else:
+        elif tipo_evaluacion != "confort":
             db.cursor.execute("DELETE FROM ev_confort WHERE visita_id = %s", (id_visita,))
 
         db.connection.commit()
@@ -586,8 +579,30 @@ def guardar_visita_cierre(id_visita, dato_cierre, tipo_evaluacion):
     """Almacena la información de cierre de una visita según su tipo de evaluación."""
     db = MySQLDatabaseManager()
     try:
+        comentario = ""
+        ver_tbs_fin = None
+        ver_tbh_fin = None
+        ver_tg_fin = None
+
+        if isinstance(dato_cierre, dict):
+            comentario = dato_cierre.get("note_visita", "")
+            ver_tbs_fin = dato_cierre.get("ver_tbs_fin")
+            ver_tbh_fin = dato_cierre.get("ver_tbh_fin")
+            ver_tg_fin = dato_cierre.get("ver_tg_fin")
+        elif isinstance(dato_cierre, (list, tuple)):
+            if len(dato_cierre) > 0:
+                ver_tbs_fin = dato_cierre[0]
+            if len(dato_cierre) > 1:
+                ver_tbh_fin = dato_cierre[1]
+            if len(dato_cierre) > 2:
+                ver_tg_fin = dato_cierre[2]
+            if len(dato_cierre) > 3:
+                comentario = dato_cierre[3]
+        elif dato_cierre is not None:
+            comentario = str(dato_cierre)
+
         query_visita = "UPDATE visitas SET note_visita = %s WHERE id_visita = %s"
-        db.cursor.execute(query_visita, (dato_cierre[3], id_visita))
+        db.cursor.execute(query_visita, (comentario, id_visita))
 
         if tipo_evaluacion == "confort":
             query_confort = """
@@ -607,9 +622,9 @@ def guardar_visita_cierre(id_visita, dato_cierre, tipo_evaluacion):
                 query_confort,
                 (
                     id_visita,
-                    dato_cierre[0],
-                    dato_cierre[1],
-                    dato_cierre[2],
+                    ver_tbs_fin,
+                    ver_tbh_fin,
+                    ver_tg_fin,
                 ),
             )
 
@@ -820,6 +835,273 @@ def actualizar_medicion(
 
     except Exception as e:
         logging.error(f"Error al actualizar la medición: {e}")
+        return False
+    finally:
+        db.close()
+
+
+def obtener_areas_ventilacion_por_visita(id_visita):
+    db = MySQLDatabaseManager()
+    try:
+        query = """
+            SELECT *
+            FROM v_areas
+            WHERE visita_id = %s
+            ORDER BY nombre_area
+        """
+        db.cursor.execute(query, (id_visita,))
+        return db.cursor.fetchall()
+    finally:
+        db.close()
+
+
+def insertar_area_ventilacion(area_data):
+    db = MySQLDatabaseManager()
+    try:
+        query = """
+            INSERT INTO v_areas (
+                area_id, visita_id, centro_id, codigo_area, nombre_area, uso,
+                piso_nivel, largo_m, ancho_m, alto_m, volumen_m3, aforo_permitido,
+                m3_porpersona, m3_porpersona_594, m3_porpersona_cumple,
+                caudal_inyeccion_total, caudal_extraccion_total, m3_porpersona_hora,
+                m3_porpersona_hora_594, m3_porpersona_hora_cumple,
+                recambio_hora_594_min, recambio_hora_594_max, recambio_hora,
+                recambio_hora_cumple, ocupacion_habitual, ventilacion_tipo,
+                ventilacion_sistema, ventilacion_estado, aberturas, croquis_url,
+                observaciones
+            ) VALUES (
+                %(area_id)s, %(visita_id)s, %(centro_id)s, %(codigo_area)s,
+                %(nombre_area)s, %(uso)s, %(piso_nivel)s, %(largo_m)s,
+                %(ancho_m)s, %(alto_m)s, %(volumen_m3)s, %(aforo_permitido)s,
+                %(m3_porpersona)s, %(m3_porpersona_594)s, %(m3_porpersona_cumple)s,
+                %(caudal_inyeccion_total)s, %(caudal_extraccion_total)s,
+                %(m3_porpersona_hora)s, %(m3_porpersona_hora_594)s,
+                %(m3_porpersona_hora_cumple)s, %(recambio_hora_594_min)s,
+                %(recambio_hora_594_max)s, %(recambio_hora)s,
+                %(recambio_hora_cumple)s, %(ocupacion_habitual)s,
+                %(ventilacion_tipo)s, %(ventilacion_sistema)s,
+                %(ventilacion_estado)s, %(aberturas)s, %(croquis_url)s,
+                %(observaciones)s
+            )
+            ON DUPLICATE KEY UPDATE
+                visita_id = VALUES(visita_id),
+                centro_id = VALUES(centro_id),
+                codigo_area = VALUES(codigo_area),
+                nombre_area = VALUES(nombre_area),
+                uso = VALUES(uso),
+                piso_nivel = VALUES(piso_nivel),
+                largo_m = VALUES(largo_m),
+                ancho_m = VALUES(ancho_m),
+                alto_m = VALUES(alto_m),
+                volumen_m3 = VALUES(volumen_m3),
+                aforo_permitido = VALUES(aforo_permitido),
+                m3_porpersona = VALUES(m3_porpersona),
+                m3_porpersona_594 = VALUES(m3_porpersona_594),
+                m3_porpersona_cumple = VALUES(m3_porpersona_cumple),
+                caudal_inyeccion_total = VALUES(caudal_inyeccion_total),
+                caudal_extraccion_total = VALUES(caudal_extraccion_total),
+                m3_porpersona_hora = VALUES(m3_porpersona_hora),
+                m3_porpersona_hora_594 = VALUES(m3_porpersona_hora_594),
+                m3_porpersona_hora_cumple = VALUES(m3_porpersona_hora_cumple),
+                recambio_hora_594_min = VALUES(recambio_hora_594_min),
+                recambio_hora_594_max = VALUES(recambio_hora_594_max),
+                recambio_hora = VALUES(recambio_hora),
+                recambio_hora_cumple = VALUES(recambio_hora_cumple),
+                ocupacion_habitual = VALUES(ocupacion_habitual),
+                ventilacion_tipo = VALUES(ventilacion_tipo),
+                ventilacion_sistema = VALUES(ventilacion_sistema),
+                ventilacion_estado = VALUES(ventilacion_estado),
+                aberturas = VALUES(aberturas),
+                croquis_url = VALUES(croquis_url),
+                observaciones = VALUES(observaciones)
+        """
+
+        db.cursor.execute(query, area_data)
+        db.connection.commit()
+        return True
+    except Exception as e:
+        logging.error("Error al insertar o actualizar el área de ventilación: %s", e)
+        if db.connection:
+            db.connection.rollback()
+        return False
+    finally:
+        db.close()
+
+
+def obtener_puntos_ventilacion_por_area(area_id):
+    db = MySQLDatabaseManager()
+    try:
+        query = """
+            SELECT *
+            FROM v_puntos_medicion
+            WHERE area_id = %s
+            ORDER BY codigo_punto
+        """
+        db.cursor.execute(query, (area_id,))
+        return db.cursor.fetchall()
+    finally:
+        db.close()
+
+
+def obtener_puntos_ventilacion_por_visita(id_visita):
+    db = MySQLDatabaseManager()
+    try:
+        query = """
+            SELECT *
+            FROM v_puntos_medicion
+            WHERE evaluacion_id = %s
+            ORDER BY area_id, codigo_punto
+        """
+        db.cursor.execute(query, (id_visita,))
+        return db.cursor.fetchall()
+    finally:
+        db.close()
+
+
+def insertar_punto_ventilacion(punto_data):
+    db = MySQLDatabaseManager()
+    try:
+        query = """
+            INSERT INTO v_puntos_medicion (
+                punto_id, evaluacion_id, area_id, codigo_punto, tipo_punto,
+                ubicacion_detalle, altura_m, distancia_fuente_m, conducto_largo_cm,
+                conducto_ancho_cm, conducto_diametro, seccion_conducto_cm2,
+                medicion_caudal_1, medicion_caudal_2, medicion_caudal_3,
+                medicion_caudal_4, medicion_caudal_5, medicion_caudal_p, caudal,
+                fecha_hora, condiciones_ocupacion, puertas_ventanas_abiertas,
+                temperatura_c, humedad_relativa_pct, croquis_url, observaciones
+            ) VALUES (
+                %(punto_id)s, %(evaluacion_id)s, %(area_id)s, %(codigo_punto)s,
+                %(tipo_punto)s, %(ubicacion_detalle)s, %(altura_m)s,
+                %(distancia_fuente_m)s, %(conducto_largo_cm)s, %(conducto_ancho_cm)s,
+                %(conducto_diametro)s, %(seccion_conducto_cm2)s,
+                %(medicion_caudal_1)s, %(medicion_caudal_2)s, %(medicion_caudal_3)s,
+                %(medicion_caudal_4)s, %(medicion_caudal_5)s, %(medicion_caudal_p)s,
+                %(caudal)s, %(fecha_hora)s, %(condiciones_ocupacion)s,
+                %(puertas_ventanas_abiertas)s, %(temperatura_c)s,
+                %(humedad_relativa_pct)s, %(croquis_url)s, %(observaciones)s
+            )
+            ON DUPLICATE KEY UPDATE
+                codigo_punto = VALUES(codigo_punto),
+                tipo_punto = VALUES(tipo_punto),
+                ubicacion_detalle = VALUES(ubicacion_detalle),
+                altura_m = VALUES(altura_m),
+                distancia_fuente_m = VALUES(distancia_fuente_m),
+                conducto_largo_cm = VALUES(conducto_largo_cm),
+                conducto_ancho_cm = VALUES(conducto_ancho_cm),
+                conducto_diametro = VALUES(conducto_diametro),
+                seccion_conducto_cm2 = VALUES(seccion_conducto_cm2),
+                medicion_caudal_1 = VALUES(medicion_caudal_1),
+                medicion_caudal_2 = VALUES(medicion_caudal_2),
+                medicion_caudal_3 = VALUES(medicion_caudal_3),
+                medicion_caudal_4 = VALUES(medicion_caudal_4),
+                medicion_caudal_5 = VALUES(medicion_caudal_5),
+                medicion_caudal_p = VALUES(medicion_caudal_p),
+                caudal = VALUES(caudal),
+                fecha_hora = VALUES(fecha_hora),
+                condiciones_ocupacion = VALUES(condiciones_ocupacion),
+                puertas_ventanas_abiertas = VALUES(puertas_ventanas_abiertas),
+                temperatura_c = VALUES(temperatura_c),
+                humedad_relativa_pct = VALUES(humedad_relativa_pct),
+                croquis_url = VALUES(croquis_url),
+                observaciones = VALUES(observaciones)
+        """
+
+        db.cursor.execute(query, punto_data)
+        db.connection.commit()
+        return True
+    except Exception as e:
+        logging.error("Error al insertar o actualizar el punto de medición: %s", e)
+        if db.connection:
+            db.connection.rollback()
+        return False
+    finally:
+        db.close()
+
+
+def recalcular_totales_area_ventilacion(area_id):
+    db = MySQLDatabaseManager()
+    try:
+        query_area = "SELECT * FROM v_areas WHERE area_id = %s"
+        db.cursor.execute(query_area, (area_id,))
+        area = db.cursor.fetchone()
+        if not area:
+            return False
+
+        query_totales = """
+            SELECT
+                SUM(CASE WHEN tipo_punto = 'Inyeccion' THEN caudal ELSE 0 END) AS total_inyeccion,
+                SUM(CASE WHEN tipo_punto = 'Extraccion' THEN caudal ELSE 0 END) AS total_extraccion
+            FROM v_puntos_medicion
+            WHERE area_id = %s
+        """
+        db.cursor.execute(query_totales, (area_id,))
+        totales = db.cursor.fetchone() or {}
+
+        def _to_float(valor):
+            if valor is None:
+                return None
+            try:
+                return float(valor)
+            except (TypeError, ValueError):
+                return None
+
+        total_inyeccion = _to_float(totales.get("total_inyeccion")) or 0.0
+        total_extraccion = _to_float(totales.get("total_extraccion")) or 0.0
+        aforo = _to_float(area.get("aforo_permitido")) or 0.0
+        volumen = _to_float(area.get("volumen_m3")) or 0.0
+        m3_pp_ref = _to_float(area.get("m3_porpersona_594")) or 10.0
+        m3_pp_hora_ref = _to_float(area.get("m3_porpersona_hora_594")) or 20.0
+        recambio_min = _to_float(area.get("recambio_hora_594_min")) or 0.0
+        recambio_max = _to_float(area.get("recambio_hora_594_max")) or 0.0
+
+        m3_pp = (volumen / aforo) if aforo > 0 else None
+        m3_pp_cumple = 1 if (m3_pp is not None and m3_pp >= m3_pp_ref) else 0
+
+        max_caudal = max(total_inyeccion, total_extraccion)
+        m3_pp_hora = (max_caudal / aforo) if aforo > 0 else None
+        m3_pp_hora_cumple = 1 if (m3_pp_hora is not None and m3_pp_hora >= m3_pp_hora_ref) else 0
+
+        recambio_hora = (max_caudal / volumen) if volumen > 0 else None
+        recambio_cumple = 1 if (
+            recambio_hora is not None and recambio_hora >= recambio_min and (
+                recambio_max == 0 or recambio_hora <= recambio_max
+            )
+        ) else 0
+
+        query_update = """
+            UPDATE v_areas
+            SET caudal_inyeccion_total = %s,
+                caudal_extraccion_total = %s,
+                m3_porpersona = %s,
+                m3_porpersona_cumple = %s,
+                m3_porpersona_hora = %s,
+                m3_porpersona_hora_cumple = %s,
+                recambio_hora = %s,
+                recambio_hora_cumple = %s
+            WHERE area_id = %s
+        """
+
+        db.cursor.execute(
+            query_update,
+            (
+                total_inyeccion,
+                total_extraccion,
+                m3_pp,
+                m3_pp_cumple,
+                m3_pp_hora,
+                m3_pp_hora_cumple,
+                recambio_hora,
+                recambio_cumple,
+                area_id,
+            ),
+        )
+        db.connection.commit()
+        return True
+    except Exception as e:
+        logging.error("Error al recalcular totales del área de ventilación: %s", e)
+        if db.connection:
+            db.connection.rollback()
         return False
     finally:
         db.close()
