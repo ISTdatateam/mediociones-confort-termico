@@ -144,6 +144,7 @@ def reset_visita_context():
     st.session_state["id_visita"] = None
     st.session_state["mostrar_formularios"] = False
     st.session_state["mostrar_caja_verificacion"] = False
+    st.session_state["verificacion_parametros_guardada"] = False
     st.session_state["modo_edicion"] = False
     st.session_state["visita_prefill"] = {}
     st.session_state["cierre_prefill"] = {}
@@ -157,7 +158,7 @@ def reset_visita_context():
     st.session_state.pop("prefill_ready", None)
     st.session_state.pop("visita_seleccionada", None)
     st.session_state.pop("vent_area_seleccionada", None)
-    st.session_state["visitas_disponibles"] = pd.DataFrame()
+    # No limpiar "visitas_disponibles" aquí para conservar el historial durante la creación de una nueva visita
 
     for i in range(1, 11):
         st.session_state.pop(f"area_sector_{i}", None)
@@ -247,6 +248,13 @@ def cargar_visita_existente(id_visita):
         st.session_state["cod_equipo_t"] = equipo_temp
         st.session_state["cod_equipo_v"] = equipo_vel
         st.session_state["mostrar_caja_verificacion"] = True
+        verificacion_inicial_guardada = (
+            st.session_state["visita_prefill"].get("ver_tbs_ini") is not None
+            and st.session_state["visita_prefill"].get("ver_tbh_ini") is not None
+            and st.session_state["visita_prefill"].get("ver_tg_ini") is not None
+            and st.session_state["visita_prefill"].get("equipo_temp") not in (None, "", "Seleccione...")
+        )
+        st.session_state["verificacion_parametros_guardada"] = verificacion_inicial_guardada
 
         cierre_prefill = {
             "ver_tbs_fin": ensure_float(visita.get("ver_tbs_fin")),
@@ -269,6 +277,7 @@ def cargar_visita_existente(id_visita):
         st.session_state["cod_equipo_t"] = "Seleccione..."
         st.session_state["cod_equipo_v"] = "Seleccione..."
         st.session_state["mostrar_caja_verificacion"] = False
+        st.session_state["verificacion_parametros_guardada"] = False
         st.session_state["cierre_prefill"] = {"note_visita": visita.get("note_visita", "")}
         st.session_state.pop("cierre", None)
         st.session_state["vent_areas"] = obtener_areas_ventilacion_por_visita(id_visita)
@@ -982,6 +991,7 @@ def main():
                         st.session_state["mostrar_caja_verificacion"] = True
                     else:
                         st.session_state["mostrar_caja_verificacion"] = False
+                        st.session_state["verificacion_parametros_guardada"] = False
 
                     st.session_state["status_message"] = (
                         f"Datos de visita guardados correctamente. ID de visita: {id_visita}"
@@ -1157,6 +1167,7 @@ def main():
                             "ver_tg_ini": verif_tg_inicial,
                         })
 
+                        st.session_state["verificacion_parametros_guardada"] = True
                         st.session_state["status_message"] = (
                             f"Verificación de parámetros guardada correctamente."
                         )
@@ -1173,11 +1184,16 @@ def main():
             mostrar_formularios_ventilacion()
             return
 
+        if not id_visita:
+            st.warning("Debes guardar primero los datos de la visita antes de registrar mediciones.")
+            st.stop()
+
+        if not st.session_state.get("verificacion_parametros_guardada", False):
+            st.info("Guarda la verificación de parámetros para habilitar las mediciones de áreas y el cierre.")
+            st.stop()
+
         st.subheader("Mediciones de Áreas")
         st.info("Completa y guarda cada área individualmente")
-
-        # Verificar que el ID de la visita existe antes de guardar mediciones
-        id_visita = st.session_state.get("id_visita", None)
 
         # Inicializar un diccionario en session_state para almacenar los IDs de medición si aún no existe
         if "mediciones_ids" not in st.session_state:
@@ -1186,18 +1202,17 @@ def main():
         if "areas_data" not in st.session_state:
             st.session_state["areas_data"] = {}
 
-        if id_visita:
-            opc_areas_medicion = get_areas_options()
-            opc_sector_especifico = get_sector_especifico()
-            opc_puesto_trabajo = get_puesto_trabajo()
-            opc_posicion_trabajador = get_posicion_trabajador()
-            opc_ventimenta_trabajador = get_vestimenta_trabajador()
-            for i in range(1, 11):  # Iterar por cada área de medición
-                area_idx = i - 1
-                default_area = st.session_state["areas_data"].get(area_idx, {})
+        opc_areas_medicion = get_areas_options()
+        opc_sector_especifico = get_sector_especifico()
+        opc_puesto_trabajo = get_puesto_trabajo()
+        opc_posicion_trabajador = get_posicion_trabajador()
+        opc_ventimenta_trabajador = get_vestimenta_trabajador()
+        for i in range(1, 11):  # Iterar por cada área de medición
+            area_idx = i - 1
+            default_area = st.session_state["areas_data"].get(area_idx, {})
 
-                with st.expander(f"Área {i} - Haz clic para expandir", expanded=False):
-                    with st.form(key=f"form_area_{i}"):
+            with st.expander(f"Área {i} - Haz clic para expandir", expanded=False):
+                with st.form(key=f"form_area_{i}"):
                         # Captura de datos del formulario
                         area_key = f"area_sector_{i}"
                         if area_key not in st.session_state:
@@ -1573,13 +1588,14 @@ def main():
                                     else:
                                         st.error(f"No se pudo guardar la medición para el área {i}.")
 
-            if st.session_state["mediciones_ids"]:
-                with st.container(border=True):
-                    st.markdown("**Mediciones registradas**")
-                    for area_idx, medicion_id in sorted(st.session_state["mediciones_ids"].items()):
-                        st.write(f"Área {area_idx + 1}: ID Medición {medicion_id}")
+        if st.session_state["mediciones_ids"]:
+            with st.container(border=True):
+                st.markdown("**Mediciones registradas**")
+                for area_idx, medicion_id in sorted(st.session_state["mediciones_ids"].items()):
+                    st.write(f"Área {area_idx + 1}: ID Medición {medicion_id}")
         else:
-            st.warning("Debes guardar primero los datos de la visita antes de registrar mediciones.")
+            st.info("Guarda al menos un área de medición para habilitar el cierre de la visita.")
+            st.stop()
 
         # 4: Cierre
         st.subheader("Cierre")
