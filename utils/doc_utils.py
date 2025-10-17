@@ -51,6 +51,18 @@ def ftemp(valor):
     return f"{str(valor).replace('.', ',')}"
 
 
+def format_decimal(valor, decimales=2, sufijo=""):
+    """Devuelve un número formateado con coma decimal."""
+    if valor in (None, ""):
+        return ""
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        return str(valor)
+    texto = f"{numero:.{decimales}f}".replace('.', ',')
+    return f"{texto}{sufijo}" if sufijo else texto
+
+
 def calcular_analisis_area(group):
     """Determina si un área cumple o no basado en mediciones."""
     if len(group) > 1:
@@ -1537,6 +1549,368 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
     # -------------------------------
     # Finaliza el documento y lo retorna como BytesIO
     # -------------------------------
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+def _texto_cumplimiento(valor):
+    if valor in (1, "1", True):
+        return "Cumple"
+    if valor in (0, "0", False):
+        return "No cumple"
+    return ""
+
+
+def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_puntos) -> BytesIO:
+    """Genera un informe en Word para la evaluación de ventilación."""
+
+    if not isinstance(df_visitas, pd.DataFrame):
+        df_visitas = pd.DataFrame(df_visitas or [])
+    if not isinstance(df_areas, pd.DataFrame):
+        df_areas = pd.DataFrame(df_areas or [])
+    if not isinstance(df_puntos, pd.DataFrame):
+        df_puntos = pd.DataFrame(df_puntos or [])
+
+    df_visitas = df_visitas.copy()
+    df_areas = df_areas.copy()
+    df_puntos = df_puntos.copy()
+
+    format_columns(df_visitas, ["nombre_personal_visita", "consultor_ist", "consultor_cargo", "consultor_zonal"], mode="title")
+    if not df_areas.empty:
+        format_columns(df_areas, ["nombre_area", "uso", "ventilacion_tipo", "ventilacion_estado"], mode="title")
+
+    doc = Document()
+    look_informe(doc)
+    set_vertical_alignment(doc, section_index=0, alignment='top')
+
+    section = doc.sections[0]
+    section.header_distance = Inches(0.4)
+    header = section.header
+    if header.paragraphs:
+        paragraph = header.paragraphs[0]
+    else:
+        paragraph = header.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = paragraph.add_run()
+    run.add_picture('assets/IST.jpg', width=Cm(2))
+
+    titulo = doc.add_heading("INFORME EVALUACIÓN VENTILACIÓN", level=1)
+    titulo.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    parrafo_codigo = doc.add_paragraph()
+    run_codigo = parrafo_codigo.add_run("CODIGO: [COMPLETAR]")
+    run_codigo.bold = True
+    parrafo_codigo.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    doc.add_heading("1. Antecedentes", level=2)
+    doc.add_paragraph(
+        "Por solicitud del área de prevención de la empresa, se realiza evaluación de ventilación para determinar las condiciones"
+        " de renovación y distribución de aire en los recintos observados, de modo que la organización pueda implementar medid"
+        "as oportunas que resguarden la salud de las personas trabajadoras conforme al D.S. N°594." )
+    doc.add_paragraph()
+
+    if not df_centros.empty and not df_visitas.empty:
+        row_centro = df_centros.iloc[0]
+        row_visita = df_visitas.iloc[0]
+
+        table_empresa = doc.add_table(rows=0, cols=2)
+        table_empresa.style = 'Table Grid'
+        add_row(table_empresa, "1.1 Información empresa")
+        add_row(table_empresa, "Razón Social", row_centro.get('razon_social', '').lower().title())
+        add_row(table_empresa, "RUT", row_centro.get('rut', ''))
+        add_row(table_empresa, "CIIU", row_centro.get('CIIU', ''))
+
+        doc.add_paragraph()
+
+        table_centro = doc.add_table(rows=0, cols=2)
+        table_centro.style = 'Table Grid'
+        add_row(table_centro, "1.2 Información centro de trabajo")
+        add_row(table_centro, "CUV / Código IST", row_centro.get('cuv', ''))
+        add_row(table_centro, "Nombre de Local", row_centro.get('nombre_ct', '').lower().title())
+        add_row(table_centro, "Dirección", row_centro.get('direccion_ct', ''))
+        add_row(table_centro, "Comuna", row_centro.get('comuna_ct', ''))
+        add_row(table_centro, "Región", row_centro.get('region_ct', ''))
+
+        doc.add_paragraph()
+
+        table_visita = doc.add_table(rows=0, cols=2)
+        table_visita.style = 'Table Grid'
+        add_row(table_visita, "1.3 Información de la visita")
+        motivo = row_visita.get('motivo_evaluacion', '') or "Programa de trabajo"
+        add_row(table_visita, "Motivo de la actividad", motivo)
+        add_row(table_visita, "Fecha actividad de terreno", formatear_fecha(row_visita.get('fecha_visita', '')))
+        add_row(table_visita, "Hora actividad de terreno", row_visita.get('hora_visita', ''))
+        add_row(table_visita, "Profesional consultor/a de IST", row_visita.get('consultor_ist', '').lower().title())
+        add_row(table_visita, "Acompañante empresa", row_visita.get('nombre_personal_visita', '').lower().title())
+        add_row(table_visita, "Cargo de la persona que acompaña la visita", row_visita.get('cargo_personal_visita', ''))
+        add_row(table_visita, "Tipo de evaluación", row_visita.get('tipo_evaluacion', '').lower().title())
+        add_row(table_visita, "Fecha emisión informe", "[COMPLETAR]")
+        add_row(table_visita, "Revisor del informe", "[COMPLETAR]")
+        add_row(table_visita, "Destinatario informe", "[COMPLETAR]")
+    else:
+        doc.add_paragraph("No se encontró información suficiente del centro de trabajo o la visita para completar el informe.")
+
+    doc.add_paragraph()
+    doc.add_heading("2. Metodología", level=2)
+    doc.add_paragraph(
+        "La evaluación considera el levantamiento de antecedentes de cada recinto, incluidas sus dimensiones, uso, ocupación y s"
+        "istemas de ventilación disponibles."
+    )
+    doc.add_paragraph(
+        "Se realizaron mediciones de velocidad de aire en los puntos representativos de inyección y extracción. Con estos datos s"
+        "e calcularon caudales volumétricos (m³/h) y se estimaron indicadores normativos como volumen disponible por persona, ve"
+        "locidad de renovación horaria y m³ por persona por hora, comparando cada resultado con los criterios del D.S. N°594."
+    )
+
+    doc.add_paragraph()
+    doc.add_heading("3. Resultados", level=2)
+    doc.add_heading("3.1 Resumen por áreas evaluadas", level=3)
+
+    if not df_areas.empty:
+        df_areas = df_areas.sort_values(by=['nombre_area', 'codigo_area'], na_position='last') if 'codigo_area' in df_areas.columns else df_areas.sort_values(by='nombre_area')
+
+        tabla_areas = doc.add_table(rows=1, cols=9)
+        tabla_areas.style = 'Table Grid'
+        headers = [
+            "Área",
+            "Uso",
+            "Dimensiones",
+            "Caudal máx. (m³/h)",
+            "m³/persona",
+            "m³/persona·h",
+            "Recambio (h⁻¹)",
+            "Sistema / Estado",
+            "Observaciones",
+        ]
+        for idx, texto in enumerate(headers):
+            tabla_areas.cell(0, idx).text = texto
+        format_row(tabla_areas.rows[0])
+
+        def _float_or_none(valor):
+            try:
+                return float(valor) if valor is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        for _, area in df_areas.iterrows():
+            area_dict = area.to_dict()
+            row_cells = tabla_areas.add_row().cells
+
+            nombre_area = area_dict.get('nombre_area') or area_dict.get('codigo_area') or ''
+            row_cells[0].text = str(nombre_area)
+            row_cells[1].text = str(area_dict.get('uso', '') or '')
+
+            volumen = format_decimal(area_dict.get('volumen_m3'))
+            aforo = area_dict.get('aforo_permitido')
+            dimensiones = []
+            if volumen:
+                dimensiones.append(f"Volumen: {volumen} m³")
+            if aforo not in (None, ''):
+                dimensiones.append(f"Aforo: {aforo}")
+            row_cells[2].text = "\n".join(dimensiones)
+
+            caudal_iny = _float_or_none(area_dict.get('caudal_inyeccion_total'))
+            caudal_ext = _float_or_none(area_dict.get('caudal_extraccion_total'))
+            caudal_valores = [valor for valor in (caudal_iny, caudal_ext) if valor is not None]
+            caudal_max = max(caudal_valores) if caudal_valores else None
+            row_cells[3].text = format_decimal(caudal_max)
+
+            m3_pp = format_decimal(area_dict.get('m3_porpersona'))
+            ref_pp = format_decimal(area_dict.get('m3_porpersona_594'))
+            texto_pp = m3_pp
+            if ref_pp:
+                texto_pp = f"{texto_pp} (ref {ref_pp})" if texto_pp else f"ref {ref_pp}"
+            cumple_pp = _texto_cumplimiento(area_dict.get('m3_porpersona_cumple'))
+            if cumple_pp:
+                texto_pp = f"{texto_pp} - {cumple_pp}" if texto_pp else cumple_pp
+            row_cells[4].text = texto_pp
+
+            m3_pp_hora = format_decimal(area_dict.get('m3_porpersona_hora'))
+            ref_pp_hora = format_decimal(area_dict.get('m3_porpersona_hora_594'))
+            texto_pp_hora = m3_pp_hora
+            if ref_pp_hora:
+                texto_pp_hora = f"{texto_pp_hora} (ref {ref_pp_hora})" if texto_pp_hora else f"ref {ref_pp_hora}"
+            cumple_pp_hora = _texto_cumplimiento(area_dict.get('m3_porpersona_hora_cumple'))
+            if cumple_pp_hora:
+                texto_pp_hora = f"{texto_pp_hora} - {cumple_pp_hora}" if texto_pp_hora else cumple_pp_hora
+            row_cells[5].text = texto_pp_hora
+
+            recambio = format_decimal(area_dict.get('recambio_hora'))
+            recambio_min = format_decimal(area_dict.get('recambio_hora_594_min'))
+            recambio_max = format_decimal(area_dict.get('recambio_hora_594_max'))
+            referencias = []
+            if recambio_min and recambio_max:
+                referencias.append(f"ref {recambio_min}-{recambio_max}")
+            elif recambio_min:
+                referencias.append(f"ref ≥ {recambio_min}")
+            elif recambio_max:
+                referencias.append(f"ref ≤ {recambio_max}")
+            texto_recambio = recambio
+            if referencias:
+                texto_recambio = f"{texto_recambio} ({'; '.join(referencias)})" if texto_recambio else " ; ".join(referencias)
+            cumple_recambio = _texto_cumplimiento(area_dict.get('recambio_hora_cumple'))
+            if cumple_recambio:
+                texto_recambio = f"{texto_recambio} - {cumple_recambio}" if texto_recambio else cumple_recambio
+            row_cells[6].text = texto_recambio
+
+            sistema_textos = []
+            if area_dict.get('ventilacion_tipo'):
+                sistema_textos.append(f"Tipo: {area_dict['ventilacion_tipo']}")
+            if area_dict.get('ventilacion_sistema'):
+                sistema_textos.append(f"Sistema: {area_dict['ventilacion_sistema']}")
+            if area_dict.get('ventilacion_estado'):
+                sistema_textos.append(f"Estado: {area_dict['ventilacion_estado']}")
+            row_cells[7].text = "\n".join(sistema_textos)
+
+            row_cells[8].text = str(area_dict.get('observaciones', '') or '')
+
+        set_column_width(tabla_areas, 0, Cm(3.5))
+        set_column_width(tabla_areas, 1, Cm(3))
+        set_column_width(tabla_areas, 2, Cm(3.5))
+        set_column_width(tabla_areas, 3, Cm(2.5))
+        set_column_width(tabla_areas, 4, Cm(3))
+        set_column_width(tabla_areas, 5, Cm(3))
+        set_column_width(tabla_areas, 6, Cm(3))
+        set_column_width(tabla_areas, 7, Cm(3))
+        set_column_width(tabla_areas, 8, Cm(4.5))
+    else:
+        doc.add_paragraph("No se registraron áreas de ventilación asociadas a la visita.")
+
+    doc.add_paragraph()
+    doc.add_heading("3.2 Puntos de medición", level=3)
+
+    area_lookup = {}
+    if not df_areas.empty and 'area_id' in df_areas.columns:
+        area_lookup = {row['area_id']: row.get('nombre_area', row['area_id']) for _, row in df_areas.iterrows()}
+
+    if not df_puntos.empty:
+        df_puntos = df_puntos.sort_values(by=['area_id', 'codigo_punto']) if 'codigo_punto' in df_puntos.columns else df_puntos
+
+        tabla_puntos = doc.add_table(rows=1, cols=10)
+        tabla_puntos.style = 'Table Grid'
+        headers_puntos = [
+            "Área",
+            "Código",
+            "Tipo",
+            "Velocidad prom. (m/s)",
+            "Sección (cm²)",
+            "Caudal (m³/h)",
+            "Ocupación",
+            "Aberturas",
+            "Fecha/Hora",
+            "Observaciones",
+        ]
+        for idx, texto in enumerate(headers_puntos):
+            tabla_puntos.cell(0, idx).text = texto
+        format_row(tabla_puntos.rows[0])
+
+        tipo_map = {"Inyeccion": "Inyección", "Extraccion": "Extracción"}
+
+        for _, punto in df_puntos.iterrows():
+            punto_dict = punto.to_dict()
+            row_cells = tabla_puntos.add_row().cells
+
+            area_nombre = area_lookup.get(punto_dict.get('area_id'), punto_dict.get('area_id', ''))
+            row_cells[0].text = str(area_nombre)
+            row_cells[1].text = str(punto_dict.get('codigo_punto', '') or '')
+            row_cells[2].text = tipo_map.get(punto_dict.get('tipo_punto'), punto_dict.get('tipo_punto', ''))
+            row_cells[3].text = format_decimal(punto_dict.get('medicion_caudal_p'))
+            row_cells[4].text = format_decimal(punto_dict.get('seccion_conducto_cm2'))
+            row_cells[5].text = format_decimal(punto_dict.get('caudal'))
+            row_cells[6].text = str(punto_dict.get('condiciones_ocupacion', '') or '')
+            aberturas = punto_dict.get('puertas_ventanas_abiertas')
+            if aberturas in (1, '1', True):
+                row_cells[7].text = "Sí"
+            elif aberturas in (0, '0', False):
+                row_cells[7].text = "No"
+            else:
+                row_cells[7].text = ""
+
+            fecha_hora = punto_dict.get('fecha_hora')
+            if isinstance(fecha_hora, datetime):
+                row_cells[8].text = fecha_hora.strftime("%d-%m-%Y %H:%M")
+            elif isinstance(fecha_hora, date):
+                row_cells[8].text = fecha_hora.strftime("%d-%m-%Y")
+            elif fecha_hora:
+                row_cells[8].text = str(fecha_hora)
+            else:
+                row_cells[8].text = ""
+
+            row_cells[9].text = str(punto_dict.get('observaciones', '') or '')
+
+        set_column_width(tabla_puntos, 0, Cm(3.5))
+        set_column_width(tabla_puntos, 1, Cm(2.2))
+        set_column_width(tabla_puntos, 2, Cm(2.5))
+        set_column_width(tabla_puntos, 3, Cm(2.8))
+        set_column_width(tabla_puntos, 4, Cm(2.5))
+        set_column_width(tabla_puntos, 5, Cm(2.8))
+        set_column_width(tabla_puntos, 6, Cm(2.5))
+        set_column_width(tabla_puntos, 7, Cm(2.5))
+        set_column_width(tabla_puntos, 8, Cm(3.2))
+        set_column_width(tabla_puntos, 9, Cm(4.5))
+    else:
+        doc.add_paragraph("No se registraron puntos de medición asociados a la visita.")
+
+    doc.add_paragraph()
+
+    total_areas = len(df_areas)
+    total_puntos = len(df_puntos)
+    areas_m3_no = []
+    areas_m3_h_no = []
+    areas_recambio_no = []
+    if not df_areas.empty and 'nombre_area' in df_areas.columns:
+        if 'm3_porpersona_cumple' in df_areas.columns:
+            areas_m3_no = df_areas.loc[df_areas['m3_porpersona_cumple'] == 0, 'nombre_area'].tolist()
+        if 'm3_porpersona_hora_cumple' in df_areas.columns:
+            areas_m3_h_no = df_areas.loc[df_areas['m3_porpersona_hora_cumple'] == 0, 'nombre_area'].tolist()
+        if 'recambio_hora_cumple' in df_areas.columns:
+            areas_recambio_no = df_areas.loc[df_areas['recambio_hora_cumple'] == 0, 'nombre_area'].tolist()
+
+    doc.add_heading("4. Conclusiones", level=2)
+    if total_areas:
+        doc.add_paragraph(f"Durante la visita se evaluaron {total_areas} áreas con sistemas o condiciones de ventilación registrados.")
+        if areas_m3_no:
+            doc.add_paragraph(f"El indicador de volumen por persona no cumple en: {', '.join(areas_m3_no)}.")
+        if areas_m3_h_no:
+            doc.add_paragraph(f"El indicador de m³ por persona por hora requiere ajuste en: {', '.join(areas_m3_h_no)}.")
+        if areas_recambio_no:
+            doc.add_paragraph(f"El recambio de aire por hora es inferior al criterio normativo en: {', '.join(areas_recambio_no)}.")
+        if not (areas_m3_no or areas_m3_h_no or areas_recambio_no):
+            doc.add_paragraph("Los indicadores evaluados cumplen los criterios normativos establecidos para las áreas revisadas.")
+    else:
+        doc.add_paragraph("No se registraron áreas evaluadas de ventilación en esta visita, por lo que no es posible emitir conclusiones técnicas.")
+
+    if total_puntos:
+        doc.add_paragraph(f"Se documentaron {total_puntos} puntos de medición con velocidades y caudales asociados a las rejillas evaluadas.")
+
+    doc.add_paragraph()
+    doc.add_heading("5. Recomendaciones", level=2)
+    if areas_m3_no:
+        doc.add_paragraph(
+            "Implementar medidas para aumentar el volumen disponible por persona (gestión de aforo o redistribución de espacios) en las áreas identificadas.",
+            style='List Bullet'
+        )
+    if areas_m3_h_no:
+        doc.add_paragraph(
+            "Ajustar o reforzar los caudales de ventilación (inyección/extracción) para alcanzar los valores de m³ por persona por hora exigidos.",
+            style='List Bullet'
+        )
+    if areas_recambio_no:
+        doc.add_paragraph(
+            "Revisar el balance de aire y la operación del sistema para lograr los recambios horarios definidos en el D.S. N°594.",
+            style='List Bullet'
+        )
+    doc.add_paragraph(
+        "Mantener registros de mantenciones preventivas y correctivas del sistema de ventilación, asegurando filtros limpios y equipos operativos.",
+        style='List Bullet'
+    )
+    doc.add_paragraph(
+        "Comunicar a las personas trabajadoras las medidas implementadas y fomentar la apertura de aberturas naturales cuando corresponda.",
+        style='List Bullet'
+    )
+
     buffer = BytesIO()
     doc.save(buffer)
     buffer.seek(0)

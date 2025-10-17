@@ -1,0 +1,139 @@
+import streamlit as st
+import pandas as pd
+from datetime import datetime, date
+
+from utils.helpers import (
+    get_ct,
+    get_visita,
+    get_visitas_por_cuv,
+    get_areas_ventilacion_df,
+    get_puntos_ventilacion_df,
+)
+from utils.doc_utils import generar_informe_ventilacion_en_word, formatear_fecha
+
+
+def _normalizar_fecha(valor):
+    if isinstance(valor, (datetime, date)):
+        return valor
+    if not valor:
+        return None
+    try:
+        return datetime.strptime(str(valor), "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def generar_informe_ventilacion(cuv, id_visita):
+    df_centro = pd.DataFrame(get_ct(cuv))
+    df_visita = get_visita(id_visita)
+    df_areas = get_areas_ventilacion_df(id_visita)
+    df_puntos = get_puntos_ventilacion_df(id_visita)
+
+    if df_centro.empty:
+        st.error("No se encontró información del centro de trabajo asociado al CUV ingresado.")
+        return None
+
+    if df_visita.empty:
+        st.error("No se encontró la visita seleccionada.")
+        return None
+
+    informe_docx = generar_informe_ventilacion_en_word(df_centro, df_visita, df_areas, df_puntos)
+    return informe_docx
+
+
+def generar_informe_unit(cuv):
+    try:
+        cuv_int = int(cuv)
+    except (TypeError, ValueError):
+        st.error("El CUV ingresado no es válido.")
+        return None
+
+    df_visitas = get_visitas_por_cuv(cuv_int)
+    if df_visitas.empty:
+        st.error("No se encontraron visitas registradas para el CUV indicado.")
+        return None
+
+    df_filtradas = df_visitas.copy()
+    if "tipo_evaluacion" in df_filtradas.columns:
+        df_filtradas["tipo_evaluacion"] = df_filtradas["tipo_evaluacion"].astype(str)
+        df_filtradas = df_filtradas[df_filtradas["tipo_evaluacion"].str.lower() == "ventilacion"]
+
+    if df_filtradas.empty:
+        st.error("No existen visitas de ventilación asociadas al CUV indicado.")
+        return None
+
+    visita_reciente = df_filtradas.iloc[0]
+    visita_id = int(visita_reciente["id_visita"])
+    return generar_informe_ventilacion(cuv_int, visita_id)
+
+
+def main():
+    st.header("Informes de Ventilación")
+    st.write("Versión 1.0 - Generación de informes técnicos de ventilación")
+
+    cuv_input = st.text_input("Ingresa el CUV", key="ventilacion_cuv")
+    informe_generado = None
+
+    visitas_filtradas = pd.DataFrame()
+    cuv_int = None
+
+    if cuv_input:
+        try:
+            cuv_int = int(cuv_input)
+        except ValueError:
+            st.error("Debes ingresar un CUV numérico.")
+        else:
+            df_visitas = get_visitas_por_cuv(cuv_int)
+            if df_visitas.empty:
+                st.info("No se encontraron visitas registradas para el CUV ingresado.")
+            else:
+                visitas_filtradas = df_visitas.copy()
+                if "tipo_evaluacion" in visitas_filtradas.columns:
+                    visitas_filtradas["tipo_evaluacion"] = visitas_filtradas["tipo_evaluacion"].astype(str)
+                    visitas_filtradas = visitas_filtradas[visitas_filtradas["tipo_evaluacion"].str.lower() == "ventilacion"]
+
+                if visitas_filtradas.empty:
+                    st.info("No existen visitas de ventilación para el CUV indicado.")
+
+    if not visitas_filtradas.empty and cuv_int is not None:
+        opciones = {}
+        for _, row in visitas_filtradas.iterrows():
+            visita_id = int(row["id_visita"])
+            fecha_valor = row.get("fecha_visita")
+            fecha_dt = _normalizar_fecha(fecha_valor)
+            fecha_texto = formatear_fecha(fecha_dt) if fecha_dt else (str(fecha_valor) if fecha_valor else "Sin fecha")
+            motivo = row.get("motivo_evaluacion", "")
+            label = f"Visita {visita_id} - {fecha_texto}"
+            if motivo:
+                label += f" ({motivo})"
+            opciones[label] = visita_id
+
+        if opciones:
+            with st.form("form_informe_ventilacion"):
+                opcion_seleccionada = st.selectbox("Selecciona la visita de ventilación", options=list(opciones.keys()))
+                submit = st.form_submit_button("Generar informe")
+
+            if submit:
+                visita_id = opciones[opcion_seleccionada]
+                informe_generado = generar_informe_ventilacion(cuv_int, visita_id)
+        else:
+            st.info("No se encontraron visitas válidas para generar el informe.")
+
+    st.markdown("---")
+    st.subheader("Generar con la visita más reciente")
+    if st.button("Generar informe automático", type="primary"):
+        informe_generado = generar_informe_unit(cuv_input)
+
+    if informe_generado:
+        st.success("Informe generado correctamente.")
+        nombre_archivo = f"informe_ventilacion_{cuv_input}.docx"
+        st.download_button(
+            label="Descargar informe",
+            data=informe_generado,
+            file_name=nombre_archivo,
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+
+if __name__ == "__main__":
+    main()

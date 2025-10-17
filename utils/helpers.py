@@ -356,6 +356,10 @@ def guardar_visita_inicio(visita_data, confort_data=None):
         equipo_temp_id = None
         equipo_vel_id = None
 
+        if tipo_evaluacion == "confort" and not confort_data:
+            logging.error("Se requieren datos de confort para guardar una visita de tipo confort.")
+            return None
+
         if tipo_evaluacion == "confort" and confort_data:
             equipo_temp_id = _obtener_id_equipo_por_dicc(db, confort_data.get("equipo_temp"))
             equipo_vel_id = _obtener_id_equipo_por_dicc(db, confort_data.get("equipo_vel_air"))
@@ -457,6 +461,10 @@ def actualizar_visita_inicio(id_visita, visita_data, confort_data=None):
         tipo_evaluacion = visita_data.get("tipo_evaluacion", "confort")
         equipo_temp_id = None
         equipo_vel_id = None
+
+        if tipo_evaluacion == "confort" and not confort_data:
+            logging.error("Se requieren datos de confort para actualizar una visita de tipo confort.")
+            return False
 
         if tipo_evaluacion == "confort" and confort_data:
             equipo_temp_id = _obtener_id_equipo_por_dicc(db, confort_data.get("equipo_temp"))
@@ -560,7 +568,7 @@ def actualizar_visita_inicio(id_visita, visita_data, confort_data=None):
                 )
 
                 db.cursor.execute(query_insert, params_insert)
-        elif tipo_evaluacion != "confort":
+        else:
             db.cursor.execute("DELETE FROM ev_confort WHERE visita_id = %s", (id_visita,))
 
         db.connection.commit()
@@ -956,6 +964,20 @@ def obtener_puntos_ventilacion_por_visita(id_visita):
         return db.cursor.fetchall()
     finally:
         db.close()
+
+
+def get_areas_ventilacion_df(id_visita):
+    """Obtiene las áreas de ventilación asociadas a una visita como DataFrame."""
+    registros = obtener_areas_ventilacion_por_visita(id_visita) or []
+    df = pd.DataFrame(registros)
+    return df
+
+
+def get_puntos_ventilacion_df(id_visita):
+    """Obtiene los puntos de medición de ventilación asociados a una visita como DataFrame."""
+    registros = obtener_puntos_ventilacion_por_visita(id_visita) or []
+    df = pd.DataFrame(registros)
+    return df
 
 
 def insertar_punto_ventilacion(punto_data):
