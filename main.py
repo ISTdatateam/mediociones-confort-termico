@@ -989,6 +989,8 @@ def main():
                     st.session_state["status_message"] = (
                         f"Datos de visita actualizados correctamente. ID: {st.session_state['id_visita']}"
                     )
+                    st.session_state["expand_mediciones"] = True
+                    st.session_state["expand_cierre"] = True
                     st.rerun()
                 else:
                     st.error("Error al actualizar los datos de la visita.")
@@ -1011,6 +1013,8 @@ def main():
                     st.session_state["status_message"] = (
                         f"Datos de visita guardados correctamente. ID de visita: {id_visita}"
                     )
+                    st.session_state["expand_mediciones"] = True
+                    st.session_state["expand_cierre"] = True
                     st.rerun()
                 else:
                     st.error("Error al guardar los datos de la visita.")
@@ -1220,8 +1224,8 @@ def main():
             for i in range(1, 11):  # Iterar por cada área de medición
                 area_idx = i - 1
                 default_area = st.session_state["areas_data"].get(area_idx, {})
-
-                with st.expander(f"Área {i} - Haz clic para expandir", expanded=False):
+                expanded_default = st.session_state.get("expand_mediciones", False)
+                with st.expander(f"Área {i} - Haz clic para expandir", expanded=expanded_default):
                     with st.form(key=f"form_area_{i}"):
                         # Captura de datos del formulario
                         area_key = f"area_sector_{i}"
@@ -1607,102 +1611,102 @@ def main():
             st.warning("Debes guardar primero los datos de la visita antes de registrar mediciones.")
 
         # 4: Cierre
-        st.subheader("Cierre")
-        cierre_prefill = st.session_state.get("cierre_prefill", {})
+        with st.expander("Cierre", expanded=st.session_state.get("expand_cierre", False)):
+            cierre_prefill = st.session_state.get("cierre_prefill", {})
 
-        with st.form("visita_data_cierre"):
-            ver_tbs_fin_default = ensure_float(cierre_prefill.get("ver_tbs_fin"), 0.0)
-            ver_tbh_fin_default = ensure_float(cierre_prefill.get("ver_tbh_fin"), 0.0)
-            ver_tg_fin_default = ensure_float(cierre_prefill.get("ver_tg_fin"), 0.0)
+            with st.form("visita_data_cierre"):
+                ver_tbs_fin_default = ensure_float(cierre_prefill.get("ver_tbs_fin"), 0.0)
+                ver_tbh_fin_default = ensure_float(cierre_prefill.get("ver_tbh_fin"), 0.0)
+                ver_tg_fin_default = ensure_float(cierre_prefill.get("ver_tg_fin"), 0.0)
 
-            verif_tbs_final = st.number_input(
-                "Verificación TBS final",
-                value=ver_tbs_fin_default,
-                step=0.1
-            )
-            verif_tbh_final = st.number_input(
-                "Verificación TBH final",
-                value=ver_tbh_fin_default,
-                step=0.1
-            )
-            verif_tg_final = st.number_input(
-                "Verificación TG final",
-                value=ver_tg_fin_default,
-                step=0.1
-            )
-            comentarios_finales = st.text_area(
-                "Comentarios finales de evaluación",
-                value=cierre_prefill.get("note_visita", ""),
-                max_chars=1000
-            )
+                verif_tbs_final = st.number_input(
+                    "Verificación TBS final",
+                    value=ver_tbs_fin_default,
+                    step=0.1
+                )
+                verif_tbh_final = st.number_input(
+                    "Verificación TBH final",
+                    value=ver_tbh_fin_default,
+                    step=0.1
+                )
+                verif_tg_final = st.number_input(
+                    "Verificación TG final",
+                    value=ver_tg_fin_default,
+                    step=0.1
+                )
+                comentarios_finales = st.text_area(
+                    "Comentarios finales de evaluación",
+                    value=cierre_prefill.get("note_visita", ""),
+                    max_chars=1000
+                )
 
-            cierre_submitted = st.form_submit_button(
-                label="Guardar verificación final",
-                type="primary",
-                use_container_width=True,
-                icon=":material/check_circle:"
-            )
-            if cierre_submitted:
-                if verif_tbs_final is None or verif_tbh_final is None or verif_tg_final is None:
-                    st.error(
-                        "Los campos de verificación son obligatorios. Por favor completa todos los valores antes de guardar."
-                    )
-                else:
-                    equipo = st.session_state["cod_equipo_t"]
-                    if not equipo or equipo == "Seleccione...":
-                        st.error("No se encontró el equipo de temperatura para comparar el patrón.")
-                    else:
-                        data_patron_medicion = (
-                            verif_tbs_final,
-                            verif_tbh_final,
-                            verif_tg_final
+                cierre_submitted = st.form_submit_button(
+                    label="Guardar verificación final",
+                    type="primary",
+                    use_container_width=True,
+                    icon=":material/check_circle:"
+                )
+                if cierre_submitted:
+                    if verif_tbs_final is None or verif_tbh_final is None or verif_tg_final is None:
+                        st.error(
+                            "Los campos de verificación son obligatorios. Por favor completa todos los valores antes de guardar."
                         )
-                        verificacion = comparar_patron(data_patron_medicion, equipo)
-                        campos_alerta = [campo for campo, estado in verificacion.items() if estado == "alerta"]
-                        if "error" in verificacion:
-                            st.error(f"Error en la comparación de patrón: {verificacion['error']}")
-                        elif "alerta" in verificacion.values():
-                            st.error(
-                                f"No se ha guardado la verificación | La verificación del patrón detecta una diferencia mayor a 0,5°C. en: {', '.join(campos_alerta)}"
-                            )
-                            st.json(verificacion)
+                    else:
+                        equipo = st.session_state["cod_equipo_t"]
+                        if not equipo or equipo == "Seleccione...":
+                            st.error("No se encontró el equipo de temperatura para comparar el patrón.")
                         else:
-                            visita_cierre_data = (
+                            data_patron_medicion = (
                                 verif_tbs_final,
                                 verif_tbh_final,
-                                verif_tg_final,
-                                comentarios_finales,
+                                verif_tg_final
                             )
-
-                            st.session_state["cierre"] = {
-                                "Verificación TBS final": verif_tbs_final,
-                                "Verificación TBH final": verif_tbh_final,
-                                "Verificación TG final": verif_tg_final,
-                                "Comentarios finales de evaluación": comentarios_finales
-                            }
-
-                            st.session_state["cierre_prefill"] = {
-                                "ver_tbs_fin": verif_tbs_final,
-                                "ver_tbh_fin": verif_tbh_final,
-                                "ver_tg_fin": verif_tg_final,
-                                "note_visita": comentarios_finales,
-                            }
-
-                            id_visita = st.session_state.get("id_visita")
-                            if id_visita is not None:
-                                tipo_eval = st.session_state.get("visita_prefill", {}).get("tipo_evaluacion",
-                                                                                           "confort")
-                                actualizado = guardar_visita_cierre(id_visita, visita_cierre_data, tipo_eval)
-                                if actualizado:
-                                    st.session_state["visita_actualizada"] = True
-                                    st.session_state["status_message"] = (
-                                        f"Verificación final guardada correctamente para la visita {id_visita}."
-                                    )
-                                    st.rerun()
-                                else:
-                                    st.error("Error al actualizar la visita.")
+                            verificacion = comparar_patron(data_patron_medicion, equipo)
+                            campos_alerta = [campo for campo, estado in verificacion.items() if estado == "alerta"]
+                            if "error" in verificacion:
+                                st.error(f"Error en la comparación de patrón: {verificacion['error']}")
+                            elif "alerta" in verificacion.values():
+                                st.error(
+                                    f"No se ha guardado la verificación | La verificación del patrón detecta una diferencia mayor a 0,5°C. en: {', '.join(campos_alerta)}"
+                                )
+                                st.json(verificacion)
                             else:
-                                st.error("No se encontró el ID de la visita para actualizar.")
+                                visita_cierre_data = (
+                                    verif_tbs_final,
+                                    verif_tbh_final,
+                                    verif_tg_final,
+                                    comentarios_finales,
+                                )
+
+                                st.session_state["cierre"] = {
+                                    "Verificación TBS final": verif_tbs_final,
+                                    "Verificación TBH final": verif_tbh_final,
+                                    "Verificación TG final": verif_tg_final,
+                                    "Comentarios finales de evaluación": comentarios_finales
+                                }
+
+                                st.session_state["cierre_prefill"] = {
+                                    "ver_tbs_fin": verif_tbs_final,
+                                    "ver_tbh_fin": verif_tbh_final,
+                                    "ver_tg_fin": verif_tg_final,
+                                    "note_visita": comentarios_finales,
+                                }
+
+                                id_visita = st.session_state.get("id_visita")
+                                if id_visita is not None:
+                                    tipo_eval = st.session_state.get("visita_prefill", {}).get("tipo_evaluacion",
+                                                                                               "confort")
+                                    actualizado = guardar_visita_cierre(id_visita, visita_cierre_data, tipo_eval)
+                                    if actualizado:
+                                        st.session_state["visita_actualizada"] = True
+                                        st.session_state["status_message"] = (
+                                            f"Verificación final guardada correctamente para la visita {id_visita}."
+                                        )
+                                        st.rerun()
+                                    else:
+                                        st.error("Error al actualizar la visita.")
+                                else:
+                                    st.error("No se encontró el ID de la visita para actualizar.")
         st.markdown("---")
         # 5: Generación informe
         st.subheader("Finalizar Visita")

@@ -1,5 +1,6 @@
 from io import BytesIO
 from datetime import datetime, date
+from typing import Union
 
 import pandas as pd
 import streamlit as st
@@ -25,7 +26,8 @@ def _normalizar_fecha(valor):
         return None
 
 
-def generar_descarga_informe(cuv: str | int, visita_id: int) -> BytesIO:
+def generar_descarga_informe(cuv: Union[str, int], visita_id: int) -> BytesIO:
+
     """Genera el archivo DOCX para un informe de ventilación.
 
     Parameters
