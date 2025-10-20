@@ -9,6 +9,7 @@ from decimal import Decimal
 import math
 from dotenv import load_dotenv
 from streamlit_cookies_controller import CookieController
+from informe_ventilacion import generar_descarga_informe
 from utils.helpers import (
     autenticar_usuario,
     get_ct,
@@ -701,9 +702,32 @@ def mostrar_formularios_ventilacion():
                 st.rerun()
 
         if st.session_state["visita_finalizada"]:
-            st.info(
-                "La generación automática de informes para evaluaciones de ventilación estará disponible próximamente."
-            )
+            st.success("Visita finalizada correctamente. Ya puedes generar el informe.")
+
+            if st.button(
+                "Generar informe de ventilación",
+                type="primary",
+                key="generar_informe_ventilacion",
+            ):
+                cuv_valor = centro_raw or centro_id
+                try:
+                    informe_docx = generar_descarga_informe(cuv_valor, id_visita)
+                except ValueError as error:
+                    st.error(str(error))
+                else:
+                    st.session_state["ventilacion_informe_docx"] = informe_docx
+                    st.success("Informe generado correctamente.")
+
+            informe_buffer = st.session_state.get("ventilacion_informe_docx")
+            if informe_buffer:
+                nombre_cuv = centro_raw or centro_id or "centro"
+                st.download_button(
+                    label="Descargar informe de ventilación",
+                    data=informe_buffer,
+                    file_name=f"informe_ventilacion_{nombre_cuv}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="descargar_informe_ventilacion",
+                )
     else:
         st.info("Debes completar todos los pasos antes de finalizar la visita:")
         if not visita_guardada:

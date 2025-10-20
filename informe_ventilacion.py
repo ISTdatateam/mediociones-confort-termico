@@ -1,6 +1,8 @@
-import streamlit as st
-import pandas as pd
+from io import BytesIO
 from datetime import datetime, date
+
+import pandas as pd
+import streamlit as st
 
 from utils.helpers import (
     get_ct,
@@ -23,22 +25,77 @@ def _normalizar_fecha(valor):
         return None
 
 
-def generar_informe_ventilacion(cuv, id_visita):
-    df_centro = pd.DataFrame(get_ct(cuv))
-    df_visita = get_visita(id_visita)
-    df_areas = get_areas_ventilacion_df(id_visita)
-    df_puntos = get_puntos_ventilacion_df(id_visita)
+def generar_descarga_informe(cuv: str | int, visita_id: int) -> BytesIO:
+    """Genera el archivo DOCX para un informe de ventilación.
 
+    Parameters
+    ----------
+    cuv:
+        Identificador del centro de trabajo. Se acepta el valor numérico en formato
+        ``str`` o ``int``; cualquier otro tipo provocará un ``ValueError``.
+    visita_id:
+        Identificador de la visita de ventilación cuyos datos se utilizarán para
+        poblar el informe.
+
+    Returns
+    -------
+    BytesIO
+        Flujo en memoria posicionado al inicio con el documento Word listo para
+        ser entregado en una descarga.
+
+    Raises
+    ------
+    ValueError
+        Cuando el CUV no es convertible a entero o cuando falta información clave
+        (centro, visita, áreas o puntos) para construir el informe.
+    """
+
+    try:
+        cuv_int = int(cuv)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("El CUV ingresado no es válido.") from exc
+
+    df_centro = pd.DataFrame(get_ct(cuv_int))
     if df_centro.empty:
-        st.error("No se encontró información del centro de trabajo asociado al CUV ingresado.")
-        return None
+        raise ValueError(
+            "No se encontró información del centro de trabajo asociado al CUV ingresado."
+        )
 
+    df_visita = get_visita(visita_id)
     if df_visita.empty:
-        st.error("No se encontró la visita seleccionada.")
-        return None
+        raise ValueError("No se encontró la visita seleccionada.")
 
-    informe_docx = generar_informe_ventilacion_en_word(df_centro, df_visita, df_areas, df_puntos)
-    return informe_docx
+    df_areas = get_areas_ventilacion_df(visita_id)
+    if df_areas.empty:
+        raise ValueError(
+            "No existen áreas de ventilación registradas para la visita seleccionada."
+        )
+
+    df_puntos = get_puntos_ventilacion_df(visita_id)
+    if df_puntos.empty:
+        raise ValueError(
+            "No existen puntos de ventilación registrados para la visita seleccionada."
+        )
+
+    informe_docx = generar_informe_ventilacion_en_word(
+        df_centro, df_visita, df_areas, df_puntos
+    )
+    if isinstance(informe_docx, BytesIO):
+        informe_docx.seek(0)
+        return informe_docx
+
+    buffer = BytesIO()
+    buffer.write(informe_docx)
+    buffer.seek(0)
+    return buffer
+
+
+def generar_informe_ventilacion(cuv, id_visita):
+    try:
+        return generar_descarga_informe(cuv, id_visita)
+    except ValueError as error:
+        st.error(str(error))
+        return None
 
 
 def generar_informe_unit(cuv):
@@ -64,7 +121,11 @@ def generar_informe_unit(cuv):
 
     visita_reciente = df_filtradas.iloc[0]
     visita_id = int(visita_reciente["id_visita"])
-    return generar_informe_ventilacion(cuv_int, visita_id)
+    try:
+        return generar_descarga_informe(cuv_int, visita_id)
+    except ValueError as error:
+        st.error(str(error))
+        return None
 
 
 def main():
