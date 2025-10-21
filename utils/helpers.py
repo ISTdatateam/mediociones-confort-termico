@@ -863,6 +863,40 @@ def obtener_areas_ventilacion_por_visita(id_visita):
         db.close()
 
 
+def generar_siguiente_area_id(visita_id):
+    """Obtiene un identificador incremental para registrar una nueva área."""
+
+    db = MySQLDatabaseManager()
+    try:
+        query = """
+            SELECT MAX(CAST(area_id AS UNSIGNED))
+            FROM v_areas
+            WHERE visita_id = %s AND area_id REGEXP '^[0-9]+$'
+        """
+        db.cursor.execute(query, (visita_id,))
+        resultado = db.cursor.fetchone()
+        maximo = resultado[0] if resultado else None
+
+        if maximo is None:
+            return "1"
+
+        try:
+            siguiente = int(maximo) + 1
+        except (TypeError, ValueError):
+            logging.warning(
+                "No fue posible interpretar el área máxima existente (%s); se utilizará 1.",
+                maximo,
+            )
+            return "1"
+
+        return str(siguiente)
+    except Exception as error:
+        logging.error("Error al generar un nuevo identificador de área: %s", error)
+        return str(int(time.time()))
+    finally:
+        db.close()
+
+
 def insertar_area_ventilacion(area_data):
     db = MySQLDatabaseManager()
     try:
