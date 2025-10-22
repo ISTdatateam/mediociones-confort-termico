@@ -376,6 +376,21 @@ def mostrar_formularios_ventilacion():
 
     areas_guardadas = st.session_state.get("vent_areas", [])
 
+    def _requiere_puntos_medicion(area: dict) -> bool:
+        valor = area.get("m3_porpersona_cumple") if isinstance(area, dict) else None
+        if isinstance(valor, str):
+            valor_limpio = valor.strip().lower()
+            if valor_limpio in {"true", "si", "sí"}:
+                return False
+            if valor_limpio in {"false", "no"}:
+                return True
+        if valor in (None, ""):
+            return True
+        try:
+            return int(float(valor)) == 0
+        except (TypeError, ValueError):
+            return True
+
     REFERENCIA_M3_PERSONA = 10.0
     REFERENCIA_M3_PERSONA_HORA = 20.0
     RECAMBIO_MIN = 6.0
@@ -536,7 +551,7 @@ def mostrar_formularios_ventilacion():
     st.session_state["vent_area_seleccionada"] = area_seleccionada
 
     area_en_foco = next((area for area in areas_guardadas if area["area_id"] == area_seleccionada), {})
-    requiere_puntos = int(area_en_foco.get("m3_porpersona_cumple") or 0) == 0
+    requiere_puntos = _requiere_puntos_medicion(area_en_foco)
 
     submit_punto = None
     if requiere_puntos:
@@ -710,9 +725,7 @@ def mostrar_formularios_ventilacion():
 
     puntos_por_area = st.session_state.get("vent_puntos", {})
     areas_requieren_puntos = [
-        area
-        for area in areas_registradas
-        if int(area.get("m3_porpersona_cumple") or 0) == 0
+        area for area in areas_registradas if _requiere_puntos_medicion(area)
     ]
     areas_pendientes = [
         area

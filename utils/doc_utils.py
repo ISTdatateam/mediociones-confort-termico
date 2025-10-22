@@ -1851,7 +1851,19 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
         set_column_width(tabla_puntos, 8, Cm(3.2))
         set_column_width(tabla_puntos, 9, Cm(4.5))
     else:
-        doc.add_paragraph("No se registraron puntos de medición asociados a la visita.")
+        requiere_mediciones = False
+        if not df_areas.empty and 'm3_porpersona_cumple' in df_areas.columns:
+            cumple_series = pd.to_numeric(
+                df_areas['m3_porpersona_cumple'], errors='coerce'
+            ).fillna(0)
+            requiere_mediciones = (cumple_series.astype(int) == 0).any()
+
+        if requiere_mediciones:
+            doc.add_paragraph("No se registraron puntos de medición asociados a la visita.")
+        else:
+            doc.add_paragraph(
+                "Todas las áreas evaluadas cumplen con la referencia de m³/persona, por lo que no fue necesario registrar puntos de medición."
+            )
 
     doc.add_paragraph()
 
