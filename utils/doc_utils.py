@@ -940,7 +940,7 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
         row_centro = df_centros.iloc[0]
         row_visita = df_visitas.iloc[0]
 
-        add_table_with_rows(
+        table_empresa = add_table_with_rows(
             doc,
             "1.1 Información empresa",
             [
@@ -953,7 +953,7 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
 
         doc.add_paragraph()
 
-        add_table_with_rows(
+        table_centro = add_table_with_rows(
             doc,
             "1.2 Información centro de trabajo",
             [
@@ -969,7 +969,7 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
         doc.add_paragraph()
 
         motivo = row_visita.get('motivo_evaluacion', '') or "Programa de trabajo"
-        add_table_with_rows(
+        table_visita = add_table_with_rows(
             doc,
             "1.3 Información de la visita",
             [
