@@ -12,7 +12,8 @@ from utils.helpers import (
     get_areas_ventilacion_df,
     get_puntos_ventilacion_df,
 )
-from utils.doc_utils import generar_informe_ventilacion_en_word, formatear_fecha
+from utils.doc_utils import generar_informe_ventilacion_en_word
+from utils.report_data import formatear_fecha
 
 
 def _normalizar_fecha(valor):

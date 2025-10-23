@@ -1,9 +1,11 @@
 version: '3.8'
+
 services:
 
   database-higiene:
     image: mysql:8.0
     container_name: bd-higiene
+    mem_limit: 1024m
     restart: always
     ports:
       - 3335:3306
@@ -21,6 +23,7 @@ services:
 
   higiene-app:
     container_name: higiene-app
+    mem_limit: 128m
     restart: always
     build: .
     #ports: .
@@ -42,6 +45,7 @@ services:
 
   nginx-higiene:
     container_name: nginx-higiene
+    mem_limit: 32m
     restart: always
     image: "nginx:latest"
     ports:
