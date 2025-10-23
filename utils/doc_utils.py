@@ -1133,6 +1133,12 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
 
     doc.add_paragraph()
 
+    total_areas = len(df_areas)
+    total_puntos = len(df_puntos)
+    areas_m3_no = []
+    areas_m3_h_no = []
+    areas_recambio_no = []
+
     if not df_puntos.empty:
         doc.add_heading("3.2 Puntos de medición", level=3)
 
@@ -1140,104 +1146,95 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
         if not df_areas.empty and 'area_id' in df_areas.columns:
             area_lookup = {row['area_id']: row.get('nombre_area', row['area_id']) for _, row in df_areas.iterrows()}
 
-        if not df_puntos.empty:
-            df_puntos = df_puntos.sort_values(by=['area_id', 'codigo_punto']) if 'codigo_punto' in df_puntos.columns else df_puntos
+        df_puntos = df_puntos.sort_values(by=['area_id', 'codigo_punto']) if 'codigo_punto' in df_puntos.columns else df_puntos
 
-            tabla_puntos = doc.add_table(rows=1, cols=10)
-            tabla_puntos.style = 'Table Grid'
-            headers_puntos = [
-                "Área",
-                "Código",
-                "Tipo",
-                "Velocidad prom. (m/s)",
-                "Sección (cm²)",
-                "Caudal (m³/h)",
-                "Ocupación",
-                "Aberturas",
-                "Fecha/Hora",
-                "Observaciones",
-            ]
-            for idx, texto in enumerate(headers_puntos):
-                tabla_puntos.cell(0, idx).text = texto
-            format_row(tabla_puntos.rows[0])
+        tabla_puntos = doc.add_table(rows=1, cols=10)
+        tabla_puntos.style = 'Table Grid'
+        headers_puntos = [
+            "Área",
+            "Código",
+            "Tipo",
+            "Velocidad prom. (m/s)",
+            "Sección (cm²)",
+            "Caudal (m³/h)",
+            "Ocupación",
+            "Aberturas",
+            "Fecha/Hora",
+            "Observaciones",
+        ]
+        for idx, texto in enumerate(headers_puntos):
+            tabla_puntos.cell(0, idx).text = texto
+        format_row(tabla_puntos.rows[0])
 
-            tipo_map = {"Inyeccion": "Inyección", "Extraccion": "Extracción"}
+        tipo_map = {"Inyeccion": "Inyección", "Extraccion": "Extracción"}
 
-            for _, punto in df_puntos.iterrows():
-                punto_dict = punto.to_dict()
-                row_cells = tabla_puntos.add_row().cells
+        for _, punto in df_puntos.iterrows():
+            punto_dict = punto.to_dict()
+            row_cells = tabla_puntos.add_row().cells
 
-                area_nombre = area_lookup.get(punto_dict.get('area_id'), punto_dict.get('area_id', ''))
-                row_cells[0].text = str(area_nombre)
-                row_cells[1].text = str(punto_dict.get('codigo_punto', '') or '')
-                row_cells[2].text = tipo_map.get(punto_dict.get('tipo_punto'), punto_dict.get('tipo_punto', ''))
-                row_cells[3].text = format_decimal(punto_dict.get('medicion_caudal_p'))
-                row_cells[4].text = format_decimal(punto_dict.get('seccion_conducto_cm2'))
-                row_cells[5].text = format_decimal(punto_dict.get('caudal'))
-                row_cells[6].text = str(punto_dict.get('condiciones_ocupacion', '') or '')
-                aberturas = punto_dict.get('puertas_ventanas_abiertas')
-                if aberturas in (1, '1', True):
-                    row_cells[7].text = "Sí"
-                elif aberturas in (0, '0', False):
-                    row_cells[7].text = "No"
-                else:
-                    row_cells[7].text = ""
-
-                fecha_hora = punto_dict.get('fecha_hora')
-                if isinstance(fecha_hora, datetime):
-                    row_cells[8].text = fecha_hora.strftime("%d-%m-%Y %H:%M")
-                elif isinstance(fecha_hora, date):
-                    row_cells[8].text = fecha_hora.strftime("%d-%m-%Y")
-                elif fecha_hora:
-                    row_cells[8].text = str(fecha_hora)
-                else:
-                    row_cells[8].text = ""
-
-                row_cells[9].text = str(punto_dict.get('observaciones', '') or '')
-
-            set_column_width(tabla_puntos, 0, Cm(3.5))
-            set_column_width(tabla_puntos, 1, Cm(2.2))
-            set_column_width(tabla_puntos, 2, Cm(2.5))
-            set_column_width(tabla_puntos, 3, Cm(2.8))
-            set_column_width(tabla_puntos, 4, Cm(2.5))
-            set_column_width(tabla_puntos, 5, Cm(2.8))
-            set_column_width(tabla_puntos, 6, Cm(2.5))
-            set_column_width(tabla_puntos, 7, Cm(2.5))
-            set_column_width(tabla_puntos, 8, Cm(3.2))
-            set_column_width(tabla_puntos, 9, Cm(4.5))
-        else:
-            requiere_mediciones = False
-            if not df_areas.empty and 'm3_porpersona_cumple' in df_areas.columns:
-                cumple_series = pd.to_numeric(
-                    df_areas['m3_porpersona_cumple'], errors='coerce'
-                ).fillna(0)
-                requiere_mediciones = (cumple_series.astype(int) == 0).any()
-
-            if requiere_mediciones:
-                doc.add_paragraph("No se registraron puntos de medición asociados a la visita.")
+            area_nombre = area_lookup.get(punto_dict.get('area_id'), punto_dict.get('area_id', ''))
+            row_cells[0].text = str(area_nombre)
+            row_cells[1].text = str(punto_dict.get('codigo_punto', '') or '')
+            row_cells[2].text = tipo_map.get(punto_dict.get('tipo_punto'), punto_dict.get('tipo_punto', ''))
+            row_cells[3].text = format_decimal(punto_dict.get('medicion_caudal_p'))
+            row_cells[4].text = format_decimal(punto_dict.get('seccion_conducto_cm2'))
+            row_cells[5].text = format_decimal(punto_dict.get('caudal'))
+            row_cells[6].text = str(punto_dict.get('condiciones_ocupacion', '') or '')
+            aberturas = punto_dict.get('puertas_ventanas_abiertas')
+            if aberturas in (1, '1', True):
+                row_cells[7].text = "Sí"
+            elif aberturas in (0, '0', False):
+                row_cells[7].text = "No"
             else:
-                doc.add_paragraph(
-                    "Todas las áreas evaluadas cumplen con la referencia de m³/persona, por lo que no fue necesario registrar puntos de medición."
-                )
+                row_cells[7].text = ""
 
-        doc.add_paragraph()
+            fecha_hora = punto_dict.get('fecha_hora')
+            if isinstance(fecha_hora, datetime):
+                row_cells[8].text = fecha_hora.strftime("%d-%m-%Y %H:%M")
+            elif isinstance(fecha_hora, date):
+                row_cells[8].text = fecha_hora.strftime("%d-%m-%Y")
+            elif fecha_hora:
+                row_cells[8].text = str(fecha_hora)
+            else:
+                row_cells[8].text = ""
 
-        total_areas = len(df_areas)
-        total_puntos = len(df_puntos)
-        areas_m3_no = []
-        areas_m3_h_no = []
-        areas_recambio_no = []
-        if not df_areas.empty and 'nombre_area' in df_areas.columns:
-            if 'm3_porpersona_cumple' in df_areas.columns:
-                areas_m3_no = df_areas.loc[df_areas['m3_porpersona_cumple'] == 0, 'nombre_area'].tolist()
-            if 'm3_porpersona_hora_cumple' in df_areas.columns:
-                areas_m3_h_no = df_areas.loc[df_areas['m3_porpersona_hora_cumple'] == 0, 'nombre_area'].tolist()
-            if 'recambio_hora_cumple' in df_areas.columns:
-                areas_recambio_no = df_areas.loc[df_areas['recambio_hora_cumple'] == 0, 'nombre_area'].tolist()
+            row_cells[9].text = str(punto_dict.get('observaciones', '') or '')
 
+        set_column_width(tabla_puntos, 0, Cm(3.5))
+        set_column_width(tabla_puntos, 1, Cm(2.2))
+        set_column_width(tabla_puntos, 2, Cm(2.5))
+        set_column_width(tabla_puntos, 3, Cm(2.8))
+        set_column_width(tabla_puntos, 4, Cm(2.5))
+        set_column_width(tabla_puntos, 5, Cm(2.8))
+        set_column_width(tabla_puntos, 6, Cm(2.5))
+        set_column_width(tabla_puntos, 7, Cm(2.5))
+        set_column_width(tabla_puntos, 8, Cm(3.2))
+        set_column_width(tabla_puntos, 9, Cm(4.5))
     else:
         doc.add_heading("3.2 Puntos de medición", level=3)
-        doc.add_paragraph("No se registraron puntos de medición asociados a la visita.")
+        requiere_mediciones = False
+        if not df_areas.empty and 'm3_porpersona_cumple' in df_areas.columns:
+            cumple_series = pd.to_numeric(
+                df_areas['m3_porpersona_cumple'], errors='coerce'
+            ).fillna(0)
+            requiere_mediciones = (cumple_series.astype(int) == 0).any()
+
+        if requiere_mediciones:
+            doc.add_paragraph("No se registraron puntos de medición asociados a la visita.")
+        else:
+            doc.add_paragraph(
+                "Todas las áreas evaluadas cumplen con la referencia de m³/persona, por lo que no fue necesario registrar puntos de medición."
+            )
+
+    doc.add_paragraph()
+
+    if not df_areas.empty and 'nombre_area' in df_areas.columns:
+        if 'm3_porpersona_cumple' in df_areas.columns:
+            areas_m3_no = df_areas.loc[df_areas['m3_porpersona_cumple'] == 0, 'nombre_area'].tolist()
+        if 'm3_porpersona_hora_cumple' in df_areas.columns:
+            areas_m3_h_no = df_areas.loc[df_areas['m3_porpersona_hora_cumple'] == 0, 'nombre_area'].tolist()
+        if 'recambio_hora_cumple' in df_areas.columns:
+            areas_recambio_no = df_areas.loc[df_areas['recambio_hora_cumple'] == 0, 'nombre_area'].tolist()
 
 
     # --- CONCLUSIONES ajustadas a la lógica: se omitirá m³/persona·h y recambios si no se midieron ---
