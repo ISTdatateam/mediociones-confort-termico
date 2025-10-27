@@ -1263,6 +1263,12 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
 
     doc.add_paragraph()
 
+    total_areas = len(df_areas) if not df_areas.empty else 0
+    areas_m3_no = []
+    areas_m3_h_no = []
+    areas_recambio_no = []
+    areas_no_cumplen = []
+
     if not df_areas.empty and 'nombre_area' in df_areas.columns:
         if 'm3_porpersona_cumple' in df_areas.columns:
             areas_m3_no = df_areas.loc[df_areas['m3_porpersona_cumple'] == 0, 'nombre_area'].tolist()
@@ -1274,6 +1280,12 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
             areas_recambio_no = df_areas.loc[df_areas['recambio_hora_cumple'] == 0, 'nombre_area'].tolist()
         else:
             areas_recambio_no = []
+
+        # Consolidar un listado general de áreas que presentan algún incumplimiento.
+        areas_no_cumplen = sorted(
+            {*(areas_m3_no or []), *(areas_m3_h_no or []), *(areas_recambio_no or [])}
+        )
+
 
 
     # --- CONCLUSIONES ajustadas a la lógica: se omitirá m³/persona·h y recambios si no se midieron ---
@@ -1364,7 +1376,7 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
         "para un entorno de trabajo seguro y saludable”."
     )
     r2[1].text = "Todas las áreas evaluadas"
-    r2[2].text = "30 días desde la recepción del presente informe técnico."
+    r2[2].text = "De acuerdo a Programa de Capacitación vigente, se debe ejecutar lo prescrito de manera permanente."
 
     # Anchos de columnas (aproximados a tu layout)
     set_column_width(tabla_presc, 0, Cm(12))
