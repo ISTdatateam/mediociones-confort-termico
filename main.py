@@ -408,8 +408,14 @@ def cargar_visita_existente(id_visita):
         st.session_state["cod_equipo_t"] = "Seleccione..."
         st.session_state["cod_equipo_v"] = "Seleccione..."
         st.session_state["mostrar_caja_verificacion"] = False
-        st.session_state["cierre_prefill"] = {"note_visita": visita.get("note_visita", "")}
-        st.session_state.pop("cierre", None)
+        comentario_final = visita.get("note_visita")
+        st.session_state["cierre_prefill"] = {"note_visita": comentario_final or ""}
+        if comentario_final is not None:
+            st.session_state["cierre"] = {
+                "Comentarios finales de evaluación": comentario_final or "",
+            }
+        else:
+            st.session_state.pop("cierre", None)
         _limpiar_estado_form_area()
         st.session_state.pop("vent_area_selector", None)
         st.session_state["vent_areas"] = obtener_areas_ventilacion_por_visita(id_visita)
