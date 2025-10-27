@@ -142,6 +142,7 @@ AREA_FORM_WIDGET_KEYS = {
     "aforo_permitido": "vent_area_aforo",
     "observaciones": "vent_area_observaciones",
 }
+VENT_AREA_FORM_PENDING_KEY = "vent_area_form_pending_updates"
 
 
 def _limpiar_estado_form_area():
@@ -152,13 +153,15 @@ def _limpiar_estado_form_area():
     st.session_state.pop("vent_area_fotos_uploader", None)
     st.session_state.pop("vent_area_status", None)
 
-    for campo, key in AREA_FORM_WIDGET_KEYS.items():
-        if campo in {"largo_m", "ancho_m", "alto_m"}:
-            st.session_state[key] = 0.0
-        elif campo == "aforo_permitido":
-            st.session_state[key] = 0
-        else:
-            st.session_state[key] = ""
+    valores_por_defecto = {
+        AREA_FORM_WIDGET_KEYS["nombre_area"]: "",
+        AREA_FORM_WIDGET_KEYS["largo_m"]: 0.0,
+        AREA_FORM_WIDGET_KEYS["ancho_m"]: 0.0,
+        AREA_FORM_WIDGET_KEYS["alto_m"]: 0.0,
+        AREA_FORM_WIDGET_KEYS["aforo_permitido"]: 0,
+        AREA_FORM_WIDGET_KEYS["observaciones"]: "",
+    }
+    st.session_state[VENT_AREA_FORM_PENDING_KEY] = valores_por_defecto
 
 
 def _cargar_area_en_formulario(area_data):
@@ -172,16 +175,31 @@ def _cargar_area_en_formulario(area_data):
     st.session_state["vent_area_form_area_id"] = area_data.get("area_id")
     st.session_state.pop("vent_area_fotos_uploader", None)
 
-    st.session_state[AREA_FORM_WIDGET_KEYS["nombre_area"]] = area_data.get("nombre_area", "")
-    st.session_state[AREA_FORM_WIDGET_KEYS["largo_m"]] = ensure_float(area_data.get("largo_m"), 0.0) or 0.0
-    st.session_state[AREA_FORM_WIDGET_KEYS["ancho_m"]] = ensure_float(area_data.get("ancho_m"), 0.0) or 0.0
-    st.session_state[AREA_FORM_WIDGET_KEYS["alto_m"]] = ensure_float(area_data.get("alto_m"), 0.0) or 0.0
     aforo_valor = area_data.get("aforo_permitido")
     try:
-        st.session_state[AREA_FORM_WIDGET_KEYS["aforo_permitido"]] = int(aforo_valor or 0)
+        aforo_normalizado = int(aforo_valor or 0)
     except (TypeError, ValueError):
-        st.session_state[AREA_FORM_WIDGET_KEYS["aforo_permitido"]] = 0
-    st.session_state[AREA_FORM_WIDGET_KEYS["observaciones"]] = area_data.get("observaciones", "") or ""
+        aforo_normalizado = 0
+
+    st.session_state[VENT_AREA_FORM_PENDING_KEY] = {
+        AREA_FORM_WIDGET_KEYS["nombre_area"]: area_data.get("nombre_area", ""),
+        AREA_FORM_WIDGET_KEYS["largo_m"]: ensure_float(area_data.get("largo_m"), 0.0) or 0.0,
+        AREA_FORM_WIDGET_KEYS["ancho_m"]: ensure_float(area_data.get("ancho_m"), 0.0) or 0.0,
+        AREA_FORM_WIDGET_KEYS["alto_m"]: ensure_float(area_data.get("alto_m"), 0.0) or 0.0,
+        AREA_FORM_WIDGET_KEYS["aforo_permitido"]: aforo_normalizado,
+        AREA_FORM_WIDGET_KEYS["observaciones"]: area_data.get("observaciones", "") or "",
+    }
+
+
+def _aplicar_pendientes_form_area():
+    """Sincroniza los valores programados del formulario con ``st.session_state``."""
+
+    valores_pendientes = st.session_state.pop(VENT_AREA_FORM_PENDING_KEY, None)
+    if not valores_pendientes:
+        return
+
+    for key, value in valores_pendientes.items():
+        st.session_state[key] = value
 
 
 def _guardar_fotografias_area(area_id, archivos_subidos):
@@ -499,6 +517,8 @@ def mostrar_formularios_ventilacion():
 
     if "vent_area_form_mode" not in st.session_state:
         _limpiar_estado_form_area()
+
+    _aplicar_pendientes_form_area()
 
     _mostrar_mensaje_area()
 
