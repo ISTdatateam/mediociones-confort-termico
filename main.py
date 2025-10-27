@@ -5,8 +5,10 @@ from datetime import date, datetime, time as dt_time, timedelta
 import time
 import os
 import io
+import uuid
 from decimal import Decimal
 import math
+from pathlib import Path
 from dotenv import load_dotenv
 from streamlit_cookies_controller import CookieController
 from informe_ventilacion import generar_descarga_informe
@@ -130,6 +132,121 @@ def ensure_float(value, default=None):
         return default
 
 
+AREA_IMAGES_DIR = Path("imagenes_pdf") / "areas"
+AREA_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+AREA_FORM_WIDGET_KEYS = {
+    "nombre_area": "vent_area_nombre",
+    "largo_m": "vent_area_largo",
+    "ancho_m": "vent_area_ancho",
+    "alto_m": "vent_area_alto",
+    "aforo_permitido": "vent_area_aforo",
+    "observaciones": "vent_area_observaciones",
+}
+
+
+def _limpiar_estado_form_area():
+    """Inicializa o limpia los valores del formulario de áreas de ventilación."""
+
+    st.session_state["vent_area_form_mode"] = "create"
+    st.session_state["vent_area_form_area_id"] = None
+    st.session_state.pop("vent_area_fotos_uploader", None)
+    st.session_state.pop("vent_area_status", None)
+
+    for campo, key in AREA_FORM_WIDGET_KEYS.items():
+        if campo in {"largo_m", "ancho_m", "alto_m"}:
+            st.session_state[key] = 0.0
+        elif campo == "aforo_permitido":
+            st.session_state[key] = 0
+        else:
+            st.session_state[key] = ""
+
+
+def _cargar_area_en_formulario(area_data):
+    """Carga los datos de un área existente en el formulario de edición."""
+
+    if not area_data:
+        _limpiar_estado_form_area()
+        return
+
+    st.session_state["vent_area_form_mode"] = "edit"
+    st.session_state["vent_area_form_area_id"] = area_data.get("area_id")
+    st.session_state.pop("vent_area_fotos_uploader", None)
+
+    st.session_state[AREA_FORM_WIDGET_KEYS["nombre_area"]] = area_data.get("nombre_area", "")
+    st.session_state[AREA_FORM_WIDGET_KEYS["largo_m"]] = ensure_float(area_data.get("largo_m"), 0.0) or 0.0
+    st.session_state[AREA_FORM_WIDGET_KEYS["ancho_m"]] = ensure_float(area_data.get("ancho_m"), 0.0) or 0.0
+    st.session_state[AREA_FORM_WIDGET_KEYS["alto_m"]] = ensure_float(area_data.get("alto_m"), 0.0) or 0.0
+    aforo_valor = area_data.get("aforo_permitido")
+    try:
+        st.session_state[AREA_FORM_WIDGET_KEYS["aforo_permitido"]] = int(aforo_valor or 0)
+    except (TypeError, ValueError):
+        st.session_state[AREA_FORM_WIDGET_KEYS["aforo_permitido"]] = 0
+    st.session_state[AREA_FORM_WIDGET_KEYS["observaciones"]] = area_data.get("observaciones", "") or ""
+
+
+def _guardar_fotografias_area(area_id, archivos_subidos):
+    """Persiste en disco las fotografías asociadas a un área."""
+
+    if not archivos_subidos:
+        return []
+
+    destino_base = AREA_IMAGES_DIR / str(area_id)
+    destino_base.mkdir(parents=True, exist_ok=True)
+
+    fotografias_guardadas = []
+    for archivo in archivos_subidos:
+        if not archivo:
+            continue
+        extension = Path(archivo.name).suffix.lower() or ".png"
+        if extension not in AREA_ALLOWED_EXTENSIONS:
+            extension = ".png"
+        nombre_archivo = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}{extension}"
+        ruta_archivo = destino_base / nombre_archivo
+        with ruta_archivo.open("wb") as destino:
+            destino.write(archivo.getbuffer())
+        fotografias_guardadas.append(ruta_archivo)
+
+    return fotografias_guardadas
+
+
+def _listar_fotografias_area(area_id):
+    """Devuelve las rutas de fotografías registradas para un área."""
+
+    destino_base = AREA_IMAGES_DIR / str(area_id)
+    if not destino_base.exists():
+        return []
+
+    return sorted(
+        [
+            ruta
+            for ruta in destino_base.iterdir()
+            if ruta.is_file() and ruta.suffix.lower() in AREA_ALLOWED_EXTENSIONS
+        ]
+    )
+
+
+def _mostrar_mensaje_area():
+    """Muestra mensajes informativos relacionados con la gestión de áreas."""
+
+    estado = st.session_state.pop("vent_area_status", None)
+    if not estado:
+        return
+
+    nivel, mensaje = estado
+    if nivel == "success":
+        st.success(mensaje)
+    elif nivel == "warning":
+        st.warning(mensaje)
+    else:
+        st.info(mensaje)
+
+
+def _registrar_mensaje_area(nivel, mensaje):
+    """Almacena mensajes para mostrarlos tras un ``st.rerun``."""
+
+    st.session_state["vent_area_status"] = (nivel, mensaje)
+
+
 # Inicializa el controlador de cookies
 cookie_controller = CookieController(key="app_cookies")
 
@@ -153,12 +270,14 @@ def reset_visita_context():
     st.session_state["areas_data"] = {}
     st.session_state["vent_areas"] = []
     st.session_state["vent_puntos"] = {}
+    _limpiar_estado_form_area()
     st.session_state.pop("cierre", None)
     st.session_state.pop("visita_finalizada", None)
     st.session_state.pop("visita_a_cargar", None)
     st.session_state.pop("prefill_ready", None)
     st.session_state.pop("visita_seleccionada", None)
     st.session_state.pop("vent_area_seleccionada", None)
+    st.session_state.pop("vent_area_selector", None)
     st.session_state["visitas_disponibles"] = pd.DataFrame()
 
     for i in range(1, 11):
@@ -273,6 +392,8 @@ def cargar_visita_existente(id_visita):
         st.session_state["mostrar_caja_verificacion"] = False
         st.session_state["cierre_prefill"] = {"note_visita": visita.get("note_visita", "")}
         st.session_state.pop("cierre", None)
+        _limpiar_estado_form_area()
+        st.session_state.pop("vent_area_selector", None)
         st.session_state["vent_areas"] = obtener_areas_ventilacion_por_visita(id_visita)
         puntos_visita = obtener_puntos_ventilacion_por_visita(id_visita)
         puntos_por_area = {}
@@ -376,6 +497,78 @@ def mostrar_formularios_ventilacion():
 
     areas_guardadas = st.session_state.get("vent_areas", [])
 
+    if "vent_area_form_mode" not in st.session_state:
+        _limpiar_estado_form_area()
+
+    _mostrar_mensaje_area()
+
+    areas_por_id = {}
+    area_label_map = {}
+    area_id_list = []
+    nombre_repetidos = {}
+
+    for area in areas_guardadas:
+        area_id = area.get("area_id")
+        if area_id is None:
+            continue
+        areas_por_id[area_id] = area
+        nombre_area_registrado = area.get("nombre_area", "Área") or "Área"
+        contador = nombre_repetidos.get(nombre_area_registrado, 0) + 1
+        nombre_repetidos[nombre_area_registrado] = contador
+        etiqueta = (
+            nombre_area_registrado
+            if contador == 1
+            else f"{nombre_area_registrado} ({contador})"
+        )
+        area_label_map[area_id] = etiqueta
+        area_id_list.append(area_id)
+
+    selected_area_id = st.session_state.get("vent_area_selector")
+    with st.container(border=True):
+        st.markdown("#### Selección de áreas registradas")
+        if area_id_list:
+            selected_area_id = st.selectbox(
+                "Selecciona un área para cargarla",
+                options=area_id_list,
+                format_func=lambda value: area_label_map.get(value, str(value)),
+                key="vent_area_selector",
+            )
+        else:
+            st.session_state.pop("vent_area_selector", None)
+            selected_area_id = None
+            st.info("Aún no se han registrado áreas para esta visita.")
+
+        col_sel_1, col_sel_2 = st.columns(2)
+        with col_sel_1:
+            cargar_disabled = not area_id_list or selected_area_id is None
+            if st.button(
+                "Cargar área seleccionada",
+                use_container_width=True,
+                type="primary",
+                disabled=cargar_disabled,
+            ):
+                area_a_editar = areas_por_id.get(selected_area_id)
+                if area_a_editar:
+                    _cargar_area_en_formulario(area_a_editar)
+                    st.session_state["vent_area_seleccionada"] = selected_area_id
+                    _registrar_mensaje_area(
+                        "info",
+                        f"Área \"{area_a_editar.get('nombre_area', 'Área')}\" lista para edición.",
+                    )
+                    st.rerun()
+        with col_sel_2:
+            if st.button(
+                "Crear nueva área",
+                use_container_width=True,
+                type="secondary",
+            ):
+                _limpiar_estado_form_area()
+                _registrar_mensaje_area(
+                    "info",
+                    "Formulario listo para registrar una nueva área.",
+                )
+                st.rerun()
+
     def _requiere_puntos_medicion(area: dict) -> bool:
         valor = area.get("m3_porpersona_cumple") if isinstance(area, dict) else None
         if isinstance(valor, str):
@@ -396,21 +589,54 @@ def mostrar_formularios_ventilacion():
     RECAMBIO_MIN = 6.0
     RECAMBIO_MAX = 60.0
 
+    allowed_photo_types = [ext.lstrip(".") for ext in sorted(AREA_ALLOWED_EXTENSIONS)]
     with st.form("form_area_ventilacion"):
-        nombre_area = st.text_input("Nombre del área o dependencia")
+        nombre_area = st.text_input(
+            "Nombre del área o dependencia",
+            key=AREA_FORM_WIDGET_KEYS["nombre_area"],
+        )
 
         col_dim_1, col_dim_2, col_dim_3 = st.columns(3)
         with col_dim_1:
-            largo_m = st.number_input("Largo (m)", min_value=0.0, step=0.1)
+            largo_m = st.number_input(
+                "Largo (m)",
+                min_value=0.0,
+                step=0.1,
+                key=AREA_FORM_WIDGET_KEYS["largo_m"],
+            )
         with col_dim_2:
-            ancho_m = st.number_input("Ancho (m)", min_value=0.0, step=0.1)
+            ancho_m = st.number_input(
+                "Ancho (m)",
+                min_value=0.0,
+                step=0.1,
+                key=AREA_FORM_WIDGET_KEYS["ancho_m"],
+            )
         with col_dim_3:
-            alto_m = st.number_input("Altura (m)", min_value=0.0, step=0.1)
+            alto_m = st.number_input(
+                "Altura (m)",
+                min_value=0.0,
+                step=0.1,
+                key=AREA_FORM_WIDGET_KEYS["alto_m"],
+            )
 
         aforo_permitido = st.number_input(
-            "Aforo máximo permitido (personas)", min_value=0, step=1
+            "Aforo máximo permitido (personas)",
+            min_value=0,
+            step=1,
+            key=AREA_FORM_WIDGET_KEYS["aforo_permitido"],
         )
-        observaciones = st.text_area("Observaciones del área", height=80)
+        observaciones = st.text_area(
+            "Observaciones del área",
+            height=80,
+            key=AREA_FORM_WIDGET_KEYS["observaciones"],
+        )
+        uploaded_photos = st.file_uploader(
+            "Fotografías del área",
+            type=allowed_photo_types,
+            accept_multiple_files=True,
+            key="vent_area_fotos_uploader",
+            help="Adjunta imágenes en formato JPG, JPEG, PNG o WEBP.",
+        )
 
         submit_area = st.form_submit_button(
             label="Guardar área",
@@ -420,11 +646,22 @@ def mostrar_formularios_ventilacion():
         )
 
     if submit_area:
+        area_form_mode = st.session_state.get("vent_area_form_mode", "create")
+        area_id_actual = st.session_state.get("vent_area_form_area_id")
+        area_existente = (
+            areas_por_id.get(area_id_actual)
+            if area_form_mode == "edit" and area_id_actual
+            else None
+        )
+
         if not centro_id:
             st.error("No se ha identificado el centro de trabajo. Verifica el CUV seleccionado.")
         elif not nombre_area.strip():
             st.error("El nombre del área es obligatorio.")
         else:
+            if area_form_mode != "edit" or not area_id_actual:
+                area_id_actual = generar_siguiente_area_id(id_visita)
+
             volumen_m3 = None
             if largo_m and ancho_m and alto_m:
                 volumen_m3 = largo_m * ancho_m * alto_m
@@ -442,17 +679,21 @@ def mostrar_formularios_ventilacion():
                 else 0
             )
 
-            nuevo_area_id = generar_siguiente_area_id(id_visita)
-            codigo_area_generado = nombre_area.strip()[:40] or f"A{nuevo_area_id}"
+            area_base = area_existente or {}
+            codigo_area_generado = (
+                area_base.get("codigo_area")
+                or nombre_area.strip()[:40]
+                or f"A{area_id_actual}"
+            )
 
             area_data = {
-                "area_id": nuevo_area_id,
+                "area_id": area_id_actual,
                 "visita_id": id_visita,
                 "centro_id": centro_id,
                 "codigo_area": codigo_area_generado,
                 "nombre_area": nombre_area.strip(),
-                "uso": "",
-                "piso_nivel": "",
+                "uso": area_base.get("uso", ""),
+                "piso_nivel": area_base.get("piso_nivel", ""),
                 "largo_m": largo_m,
                 "ancho_m": ancho_m,
                 "alto_m": alto_m,
@@ -461,21 +702,21 @@ def mostrar_formularios_ventilacion():
                 "m3_porpersona": m3_porpersona,
                 "m3_porpersona_594": REFERENCIA_M3_PERSONA,
                 "m3_porpersona_cumple": m3_porpersona_cumple,
-                "caudal_inyeccion_total": 0.0,
-                "caudal_extraccion_total": 0.0,
-                "m3_porpersona_hora": None,
+                "caudal_inyeccion_total": ensure_float(area_base.get("caudal_inyeccion_total"), 0.0) or 0.0,
+                "caudal_extraccion_total": ensure_float(area_base.get("caudal_extraccion_total"), 0.0) or 0.0,
+                "m3_porpersona_hora": ensure_float(area_base.get("m3_porpersona_hora")),
                 "m3_porpersona_hora_594": REFERENCIA_M3_PERSONA_HORA,
-                "m3_porpersona_hora_cumple": 0,
+                "m3_porpersona_hora_cumple": int(area_base.get("m3_porpersona_hora_cumple", 0) or 0),
                 "recambio_hora_594_min": RECAMBIO_MIN,
                 "recambio_hora_594_max": RECAMBIO_MAX,
-                "recambio_hora": None,
-                "recambio_hora_cumple": 0,
-                "ocupacion_habitual": None,
-                "ventilacion_tipo": None,
-                "ventilacion_sistema": "",
-                "ventilacion_estado": None,
-                "aberturas": "",
-                "croquis_url": "",
+                "recambio_hora": ensure_float(area_base.get("recambio_hora")),
+                "recambio_hora_cumple": int(area_base.get("recambio_hora_cumple", 0) or 0),
+                "ocupacion_habitual": area_base.get("ocupacion_habitual"),
+                "ventilacion_tipo": area_base.get("ventilacion_tipo"),
+                "ventilacion_sistema": area_base.get("ventilacion_sistema", ""),
+                "ventilacion_estado": area_base.get("ventilacion_estado"),
+                "aberturas": area_base.get("aberturas", ""),
+                "croquis_url": area_base.get("croquis_url", ""),
                 "observaciones": observaciones.strip(),
             }
 
@@ -487,12 +728,47 @@ def mostrar_formularios_ventilacion():
                     puntos_actualizados[area["area_id"]] = obtener_puntos_ventilacion_por_area(area["area_id"])
                 st.session_state["vent_puntos"] = puntos_actualizados
                 st.session_state["vent_area_seleccionada"] = area_data["area_id"]
-                st.success(
-                    f"Área \"{area_data['nombre_area']}\" guardada correctamente."
+
+                area_actualizada = next(
+                    (
+                        area
+                        for area in st.session_state["vent_areas"]
+                        if area.get("area_id") == area_data["area_id"]
+                    ),
+                    area_data,
                 )
+                _cargar_area_en_formulario(area_actualizada)
+
+                fotografias_guardadas = _guardar_fotografias_area(
+                    area_data["area_id"], uploaded_photos
+                )
+                if fotografias_guardadas:
+                    _registrar_mensaje_area(
+                        "success",
+                        f"Área \"{area_data['nombre_area']}\" guardada y {len(fotografias_guardadas)} fotografía(s) adjunta(s).",
+                    )
+                else:
+                    _registrar_mensaje_area(
+                        "success",
+                        f"Área \"{area_data['nombre_area']}\" guardada correctamente.",
+                    )
                 st.rerun()
             else:
                 st.error("No fue posible guardar el área. Revisa los datos e inténtalo nuevamente.")
+
+    area_id_en_formulario = st.session_state.get("vent_area_form_area_id")
+    if area_id_en_formulario:
+        with st.expander("Fotografías registradas del área", expanded=False):
+            fotos_area = _listar_fotografias_area(area_id_en_formulario)
+            if fotos_area:
+                for ruta in fotos_area:
+                    st.image(
+                        str(ruta),
+                        caption=ruta.name,
+                        use_column_width=True,
+                    )
+            else:
+                st.info("Aún no se han agregado fotografías para esta área.")
 
     if areas_guardadas:
         df_areas = pd.DataFrame(areas_guardadas)
@@ -523,19 +799,11 @@ def mostrar_formularios_ventilacion():
         st.info("Registra al menos un área para habilitar los puntos de medición.")
         return
 
-    area_options = {}
-    nombre_repetidos = {}
-    for area in areas_guardadas:
-        nombre_area = area.get("nombre_area", "Área") or "Área"
-        if nombre_area in nombre_repetidos:
-            nombre_repetidos[nombre_area] += 1
-            etiqueta = f"{nombre_area} ({nombre_repetidos[nombre_area]})"
-        else:
-            nombre_repetidos[nombre_area] = 1
-            etiqueta = nombre_area
-        area_options[etiqueta] = area["area_id"]
-
+    area_options = {area_label_map[area_id]: area_id for area_id in area_id_list}
     area_labels = list(area_options.keys())
+    if not area_labels:
+        st.info("No hay áreas disponibles para registrar puntos de medición.")
+        return
     seleccion_actual = st.session_state.get("vent_area_seleccionada")
     if seleccion_actual:
         idx_area = 0
