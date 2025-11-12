@@ -9,6 +9,7 @@ import uuid
 from decimal import Decimal
 import math
 from pathlib import Path
+import shutil
 from dotenv import load_dotenv
 from streamlit_cookies_controller import CookieController
 from informe_ventilacion import generar_descarga_informe
@@ -145,6 +146,49 @@ AREA_FORM_WIDGET_KEYS = {
 VENT_AREA_FORM_PENDING_KEY = "vent_area_form_pending_updates"
 
 
+def _obtener_directorio_fotografias_area(visita_id, area_id):
+    """Devuelve la ruta base para almacenar fotografías de un área específica."""
+
+    return AREA_IMAGES_DIR / str(visita_id) / str(area_id)
+
+
+def _migrar_fotografias_area_legacy(visita_id, area_id):
+    """Traslada fotografías antiguas almacenadas sin la carpeta de visita asociada."""
+
+    if not visita_id or not area_id:
+        return
+
+    origen = AREA_IMAGES_DIR / str(area_id)
+    destino = _obtener_directorio_fotografias_area(visita_id, area_id)
+
+    if origen == destino or not origen.exists() or not origen.is_dir():
+        return
+
+    destino.mkdir(parents=True, exist_ok=True)
+
+    for ruta in origen.iterdir():
+        if not ruta.is_file() or ruta.suffix.lower() not in AREA_ALLOWED_EXTENSIONS:
+            continue
+
+        destino_final = destino / ruta.name
+        if destino_final.exists():
+            try:
+                ruta.unlink(missing_ok=True)
+            except Exception as error:
+                logging.warning("No se pudo eliminar la fotografía duplicada %s: %s", ruta, error)
+            continue
+
+        try:
+            shutil.move(str(ruta), str(destino_final))
+        except Exception as error:
+            logging.warning("No se pudo migrar la fotografía %s: %s", ruta, error)
+
+    try:
+        origen.rmdir()
+    except OSError:
+        pass
+
+
 def _limpiar_estado_form_area():
     """Inicializa o limpia los valores del formulario de áreas de ventilación."""
 
@@ -202,13 +246,15 @@ def _aplicar_pendientes_form_area():
         st.session_state[key] = value
 
 
-def _guardar_fotografias_area(area_id, archivos_subidos):
+def _guardar_fotografias_area(visita_id, area_id, archivos_subidos):
     """Persiste en disco las fotografías asociadas a un área."""
 
     if not archivos_subidos:
         return []
 
-    destino_base = AREA_IMAGES_DIR / str(area_id)
+    _migrar_fotografias_area_legacy(visita_id, area_id)
+
+    destino_base = _obtener_directorio_fotografias_area(visita_id, area_id)
     destino_base.mkdir(parents=True, exist_ok=True)
 
     fotografias_guardadas = []
@@ -227,20 +273,31 @@ def _guardar_fotografias_area(area_id, archivos_subidos):
     return fotografias_guardadas
 
 
-def _listar_fotografias_area(area_id):
+def _listar_fotografias_area(visita_id, area_id):
     """Devuelve las rutas de fotografías registradas para un área."""
 
-    destino_base = AREA_IMAGES_DIR / str(area_id)
-    if not destino_base.exists():
+    if not visita_id or not area_id:
         return []
 
-    return sorted(
-        [
+    _migrar_fotografias_area_legacy(visita_id, area_id)
+
+    destinos = [
+        _obtener_directorio_fotografias_area(visita_id, area_id),
+        AREA_IMAGES_DIR / str(area_id),
+    ]
+
+    fotografias = []
+    for destino in destinos:
+        if not destino.exists():
+            continue
+        fotografias.extend(
             ruta
-            for ruta in destino_base.iterdir()
+            for ruta in destino.iterdir()
             if ruta.is_file() and ruta.suffix.lower() in AREA_ALLOWED_EXTENSIONS
-        ]
-    )
+        )
+
+    fotografias_unicas = {ruta: None for ruta in fotografias}
+    return sorted(fotografias_unicas.keys())
 
 
 def _mostrar_mensaje_area():
@@ -766,7 +823,7 @@ def mostrar_formularios_ventilacion():
                 _cargar_area_en_formulario(area_actualizada)
 
                 fotografias_guardadas = _guardar_fotografias_area(
-                    area_data["area_id"], uploaded_photos
+                    id_visita, area_data["area_id"], uploaded_photos
                 )
                 if fotografias_guardadas:
                     _registrar_mensaje_area(
@@ -785,7 +842,7 @@ def mostrar_formularios_ventilacion():
     area_id_en_formulario = st.session_state.get("vent_area_form_area_id")
     if area_id_en_formulario:
         with st.expander("Fotografías registradas del área", expanded=False):
-            fotos_area = _listar_fotografias_area(area_id_en_formulario)
+            fotos_area = _listar_fotografias_area(id_visita, area_id_en_formulario)
             if fotos_area:
                 for ruta in fotos_area:
                     st.image(
