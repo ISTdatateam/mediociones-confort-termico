@@ -652,7 +652,7 @@ def mostrar_formularios_ventilacion():
             key=AREA_FORM_WIDGET_KEYS["aforo_permitido"],
         )
         observaciones = st.text_area(
-            "Observaciones del área",
+            "Identificación de aperturas por donde ingresa y/o sale aire, ejemplo celosía, puerta, ventana, etc...",
             height=80,
             key=AREA_FORM_WIDGET_KEYS["observaciones"],
         )

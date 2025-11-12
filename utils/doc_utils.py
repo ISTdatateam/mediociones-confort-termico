@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 import logging
 import os
+import re
+import unicodedata
 from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
+from pathlib import Path
+from typing import Iterable, List, Optional
 
 import pandas as pd
 from docx import Document
@@ -53,6 +57,9 @@ logging.basicConfig(level=logging.DEBUG)
 # FUNCIONES AUXILIARES PARA EL DOCUMENTO WORD
 # -----------------------------------------------
 
+AREA_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+
+
 def center_cell(cell):
     cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
     # Centrar todos los párrafos dentro de la celda
@@ -77,6 +84,111 @@ def join_with_and(items):
         return f"{items[0]} y {items[1]}"
     else:
         return ", ".join(items[:-1]) + " y " + items[-1]
+
+
+def _slugify(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFD", text)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^0-9a-zA-Z]+", "-", ascii_text).strip("-")
+    return slug.lower()
+
+
+def _listar_imagenes_area(area_id: Optional[object], nombre_area: Optional[str]) -> List[Path]:
+    base_dir = Path("imagenes_pdf") / "areas"
+    if not base_dir.exists():
+        return []
+
+    candidatos: List[str] = []
+    for value in (area_id, nombre_area):
+        texto = str(value or "").strip()
+        if texto:
+            candidatos.append(texto)
+
+    slug_candidatos = {_slugify(valor) for valor in candidatos if valor}
+    imagenes: List[Path] = []
+
+    try:
+        carpetas = [ruta for ruta in base_dir.iterdir() if ruta.is_dir()]
+    except FileNotFoundError:
+        return []
+
+    for carpeta in carpetas:
+        nombre_carpeta = carpeta.name
+        slug_carpeta = _slugify(nombre_carpeta)
+        if nombre_carpeta not in candidatos and slug_carpeta not in slug_candidatos:
+            continue
+
+        archivos = [
+            archivo
+            for archivo in carpeta.iterdir()
+            if archivo.is_file() and archivo.suffix.lower() in AREA_IMAGE_EXTENSIONS
+        ]
+        imagenes.extend(natsorted(archivos, key=lambda p: p.name))
+
+    return imagenes
+
+
+def _formatear_observaciones_general(group: pd.DataFrame, columnas: Iterable[str]) -> str:
+    observaciones: List[str] = []
+    for columna in columnas:
+        if columna not in group.columns:
+            continue
+        valores = group[columna].dropna().astype(str).str.strip()
+        for valor in valores:
+            if not valor or valor.lower() == "nan":
+                continue
+            observaciones.append(valor)
+
+    if not observaciones:
+        return "Sin observaciones registradas."
+
+    return "\n".join(OrderedDict.fromkeys(observaciones))
+
+
+def _agregar_seccion_anexos(doc: Document, informacion_areas: List[dict]):
+    doc.add_heading("Anexos", level=2)
+    tabla = doc.add_table(rows=1, cols=3)
+    tabla.style = "Table Grid"
+
+    encabezados = ["Área", "Observaciones", "Registro fotográfico"]
+    for indice, texto in enumerate(encabezados):
+        tabla.rows[0].cells[indice].text = texto
+
+    format_row(tabla.rows[0])
+    set_column_width(tabla, 0, Cm(3))
+    set_column_width(tabla, 1, Cm(5))
+    set_column_width(tabla, 2, Cm(8.5))
+
+    if not informacion_areas:
+        row_cells = tabla.add_row().cells
+        row_cells[0].text = "Sin información disponible"
+        merged = row_cells[0].merge(row_cells[1]).merge(row_cells[2])
+        for paragraph in merged.paragraphs:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        return
+
+    for area in informacion_areas:
+        row_cells = tabla.add_row().cells
+        row_cells[0].text = area.get("nombre", "")
+        row_cells[1].text = area.get("observaciones", "")
+
+        imagenes = area.get("imagenes") or []
+        fotos_cell = row_cells[2]
+        fotos_cell.text = ""
+
+        if imagenes:
+            for ruta in imagenes:
+                run = fotos_cell.paragraphs[0].add_run()
+                try:
+                    run.add_picture(str(ruta), width=Cm(8.5))
+                except Exception:
+                    continue
+                run.add_break()
+        else:
+            fotos_cell.text = "Sin registro fotográfico."
 def agregar_medidas_correctivas(doc, df_mediciones, areas_no_cumplen):
     # 1. Medidas Ingenieriles (solo para áreas no conformes)
     medidas_ingenieriles = []
@@ -667,10 +779,34 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
     p_zonal.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run_zonal = p_zonal.add_run(consultor_zonal)
 
-    # -------------------------------
-    # 6) ANEXOS
-    # -------------------------------
+    anexos_info: List[dict] = []
+    if not df_mediciones.empty and "nombre_area" in df_mediciones.columns:
+        obs_cols = [col for col in df_mediciones.columns if col.startswith("obs_")]
+        for extra in ("observaciones", "caract_constructivas", "ingreso_salida_aire"):
+            if extra in df_mediciones.columns:
+                obs_cols.append(extra)
+
+        for area, group in df_mediciones.groupby("nombre_area"):
+            area_id = None
+            if "area_id" in group.columns:
+                disponibles = group["area_id"].dropna()
+                if not disponibles.empty:
+                    area_id = disponibles.iloc[0]
+
+            observaciones = _formatear_observaciones_general(group, obs_cols)
+            imagenes = _listar_imagenes_area(area_id, area)
+
+            anexos_info.append(
+                {
+                    "nombre": str(area) if area is not None else "",
+                    "observaciones": observaciones,
+                    "imagenes": imagenes,
+                }
+            )
+
     doc.add_page_break()
+    _agregar_seccion_anexos(doc, anexos_info)
+    doc.add_paragraph()
     doc.add_heading("Anexo 1. Consideraciones técnicas de la evaluación", level=2)
 
     # Agrega un párrafo con el título para la tabla
@@ -1387,7 +1523,7 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
     # 5) VIGENCIA DEL INFORME
     # -------------------------------
     # Encabezado principal del contenido: Vigencia del informe
-    paragraph = doc.add_heading("5. Vigencia del informe", level=2)
+    paragraph = doc.add_heading("6. Vigencia del informe", level=2)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
     if not df_visitas.empty:
         doc.add_paragraph(
@@ -1449,6 +1585,30 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
     p_zonal = doc.add_paragraph()
     p_zonal.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run_zonal = p_zonal.add_run(consultor_zonal)
+
+    anexos_info_vent: List[dict] = []
+    if not df_areas.empty and "nombre_area" in df_areas.columns:
+        df_areas_sorted = df_areas.copy()
+        if "nombre_area" in df_areas_sorted.columns:
+            df_areas_sorted = df_areas_sorted.sort_values(by="nombre_area")
+
+        for _, fila in df_areas_sorted.iterrows():
+            nombre = str(fila.get("nombre_area", "") or "")
+            observacion = str(fila.get("observaciones", "") or "").strip()
+            if not observacion:
+                observacion = "Sin observaciones registradas."
+            area_id = fila.get("area_id")
+            imagenes = _listar_imagenes_area(area_id, nombre)
+            anexos_info_vent.append(
+                {
+                    "nombre": nombre,
+                    "observaciones": observacion,
+                    "imagenes": imagenes,
+                }
+            )
+
+    doc.add_page_break()
+    _agregar_seccion_anexos(doc, anexos_info_vent)
 
     buffer = BytesIO()
     doc.save(buffer)
