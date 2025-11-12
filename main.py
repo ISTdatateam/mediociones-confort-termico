@@ -300,6 +300,53 @@ def _listar_fotografias_area(visita_id, area_id):
     return sorted(fotografias_unicas.keys())
 
 
+def _eliminar_directorio_vacio_area(directorio):
+    """Elimina directorios vacíos dentro de ``AREA_IMAGES_DIR``."""
+
+    if not directorio:
+        return
+
+    directorio = Path(directorio)
+    limite = AREA_IMAGES_DIR.resolve()
+
+    while True:
+        try:
+            if not directorio.exists() or not directorio.is_dir():
+                break
+            if any(directorio.iterdir()):
+                break
+            if directorio.resolve() == limite:
+                break
+            directorio.rmdir()
+            directorio = directorio.parent
+        except Exception as error:
+            logging.warning(
+                "No se pudo eliminar el directorio vacío de fotografías %s: %s",
+                directorio,
+                error,
+            )
+            break
+
+
+def _eliminar_fotografia_area(ruta_fotografia):
+    """Elimina una fotografía registrada de un área."""
+
+    if not ruta_fotografia:
+        return False
+
+    ruta = Path(ruta_fotografia)
+
+    try:
+        if ruta.exists() and ruta.is_file():
+            ruta.unlink()
+            _eliminar_directorio_vacio_area(ruta.parent)
+            return True
+        return False
+    except Exception as error:
+        logging.error("No se pudo eliminar la fotografía %s: %s", ruta, error)
+        return False
+
+
 def _mostrar_mensaje_area():
     """Muestra mensajes informativos relacionados con la gestión de áreas."""
 
@@ -845,11 +892,30 @@ def mostrar_formularios_ventilacion():
             fotos_area = _listar_fotografias_area(id_visita, area_id_en_formulario)
             if fotos_area:
                 for ruta in fotos_area:
-                    st.image(
-                        str(ruta),
-                        caption=ruta.name,
-                        use_column_width=True,
-                    )
+                    col_imagen, col_accion = st.columns([5, 1])
+                    with col_imagen:
+                        st.image(
+                            str(ruta),
+                            caption=ruta.name,
+                            use_column_width=True,
+                        )
+                    with col_accion:
+                        st.markdown("&nbsp;")
+                        if st.button(
+                            "Eliminar foto",
+                            key=f"vent_area_delete_{area_id_en_formulario}_{ruta.name}",
+                        ):
+                            if _eliminar_fotografia_area(ruta):
+                                _registrar_mensaje_area(
+                                    "success",
+                                    f"Fotografía \"{ruta.name}\" eliminada correctamente.",
+                                )
+                            else:
+                                _registrar_mensaje_area(
+                                    "warning",
+                                    f"No se pudo eliminar la fotografía \"{ruta.name}\".",
+                                )
+                            st.rerun()
             else:
                 st.info("Aún no se han agregado fotografías para esta área.")
 
@@ -1181,8 +1247,8 @@ def main():
 
     # Búsqueda por CUV
     with st.container(border=True):
-        st.info("Ingresa un CUV y haz clic en 'Buscar' para iniciar el registro de medición.")
-        input_cuv = st.text_input("Ingresa el CUV:")
+        st.info("Ingresa un CUV o CECO y haz clic en 'Buscar' para iniciar el registro de medición.")
+        input_cuv = st.text_input("Ingresa el CUV o CECO:")
         if st.button("Buscar"):
             st.session_state["input_cuv_str"] = input_cuv.strip()
             reset_visita_context()
