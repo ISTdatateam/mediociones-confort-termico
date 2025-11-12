@@ -673,7 +673,7 @@ def mostrar_formularios_ventilacion():
             cargar_disabled = not area_id_list or selected_area_id is None
             if st.button(
                 "Cargar área seleccionada",
-                use_container_width=True,
+                width='stretch',
                 type="primary",
                 disabled=cargar_disabled,
             ):
@@ -689,7 +689,7 @@ def mostrar_formularios_ventilacion():
         with col_sel_2:
             if st.button(
                 "Crear nueva área",
-                use_container_width=True,
+                width='stretch',
                 type="secondary",
             ):
                 _limpiar_estado_form_area()
@@ -771,7 +771,7 @@ def mostrar_formularios_ventilacion():
         submit_area = st.form_submit_button(
             label="Guardar área",
             type="primary",
-            use_container_width=True,
+            width='stretch',
             icon=":material/save:",
         )
 
@@ -897,7 +897,7 @@ def mostrar_formularios_ventilacion():
                         st.image(
                             str(ruta),
                             caption=ruta.name,
-                            use_column_width=True,
+                            use_container_width=True,
                         )
                     with col_accion:
                         st.markdown("&nbsp;")
@@ -937,7 +937,7 @@ def mostrar_formularios_ventilacion():
             df_vista["m3_porpersona_hora_cumple"] = df_vista["m3_porpersona_hora_cumple"].map({1: "Cumple", 0: "No cumple"})
         if "recambio_hora_cumple" in df_vista.columns:
             df_vista["recambio_hora_cumple"] = df_vista["recambio_hora_cumple"].map({1: "Cumple", 0: "No cumple"})
-        st.dataframe(df_vista, use_container_width=True)
+        st.dataframe(df_vista, width='stretch')
     else:
         st.info("Aún no se han registrado áreas para esta visita.")
 
@@ -1003,7 +1003,7 @@ def mostrar_formularios_ventilacion():
             submit_punto = st.form_submit_button(
                 label="Guardar punto de medición",
                 type="primary",
-                use_container_width=True,
+                width='stretch',
                 icon=":material/save:",
             )
     else:
@@ -1096,7 +1096,7 @@ def mostrar_formularios_ventilacion():
         df_vista = df_puntos[columnas_disponibles].copy()
         if "puertas_ventanas_abiertas" in df_vista.columns:
             df_vista["puertas_ventanas_abiertas"] = df_vista["puertas_ventanas_abiertas"].map({1: "Sí", 0: "No"})
-        st.dataframe(df_vista, use_container_width=True)
+        st.dataframe(df_vista, width='stretch')
     elif requiere_puntos:
         st.info("El área seleccionada aún no tiene puntos registrados.")
 
@@ -1113,7 +1113,7 @@ def mostrar_formularios_ventilacion():
         submit_cierre = st.form_submit_button(
             label="Guardar comentarios finales",
             type="primary",
-            use_container_width=True,
+            width='stretch',
             icon=":material/check_circle:",
         )
 
@@ -1304,7 +1304,7 @@ def main():
                     if col in df_visitas_display.columns
                 ]
                 if columnas_resumen:
-                    st.dataframe(df_visitas_display[columnas_resumen], use_container_width=True)
+                    st.dataframe(df_visitas_display[columnas_resumen], width='stretch')
 
                 opciones_map = {}
                 for _, row in df_visitas_display.iterrows():
@@ -1332,16 +1332,16 @@ def main():
 
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("Cargar visita seleccionada", use_container_width=True, type="primary",
+                    if st.button("Cargar visita seleccionada", width='stretch', type="primary",
                                  disabled=not opciones_map):
                         if selected_visita_id is not None:
                             cargar_visita_existente(selected_visita_id)
                 with col2:
-                    if st.button("Crear nueva visita", use_container_width=True, type="secondary"):
+                    if st.button("Crear nueva visita", width='stretch', type="secondary"):
                         preparar_nueva_visita()
             else:
                 st.info("No existen visitas registradas para este CUV. Puedes crear una nueva visita para comenzar.")
-                if st.button("Crear nueva visita", use_container_width=True):
+                if st.button("Crear nueva visita", width='stretch'):
                     preparar_nueva_visita()
 
         st.write("")
@@ -1405,7 +1405,7 @@ def main():
             submit_datos_visita = st.form_submit_button(
                 label="Guardar datos de la visita",
                 type="primary",
-                use_container_width=True,
+                width='stretch',
                 icon=":material/check_circle:"
             )
 
@@ -1566,7 +1566,7 @@ def main():
                 submit_verificacion = st.form_submit_button(
                     label="Guardar verificación de parámetros",
                     type="primary",
-                    use_container_width=True,
+                    width='stretch',
                     icon=":material/check_circle:"
                 )
 
@@ -2106,7 +2106,7 @@ def main():
                 cierre_submitted = st.form_submit_button(
                     label="Guardar verificación final",
                     type="primary",
-                    use_container_width=True,
+                    width='stretch',
                     icon=":material/check_circle:"
                 )
                 if cierre_submitted:

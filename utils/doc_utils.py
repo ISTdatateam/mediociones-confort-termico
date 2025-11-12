@@ -96,7 +96,11 @@ def _slugify(value: object) -> str:
     return slug.lower()
 
 
-def _listar_imagenes_area(area_id: Optional[object], nombre_area: Optional[str]) -> List[Path]:
+def _listar_imagenes_area(
+    area_id: Optional[object],
+    nombre_area: Optional[str],
+    visita_id: Optional[object] = None,
+) -> List[Path]:
     base_dir = Path("imagenes_pdf") / "areas"
     if not base_dir.exists():
         return []
@@ -107,26 +111,64 @@ def _listar_imagenes_area(area_id: Optional[object], nombre_area: Optional[str])
         if texto:
             candidatos.append(texto)
 
-    slug_candidatos = {_slugify(valor) for valor in candidatos if valor}
-    imagenes: List[Path] = []
-
-    try:
-        carpetas = [ruta for ruta in base_dir.iterdir() if ruta.is_dir()]
-    except FileNotFoundError:
+    if not candidatos:
         return []
 
-    for carpeta in carpetas:
-        nombre_carpeta = carpeta.name
-        slug_carpeta = _slugify(nombre_carpeta)
-        if nombre_carpeta not in candidatos and slug_carpeta not in slug_candidatos:
+    slug_candidatos = {_slugify(valor) for valor in candidatos if valor}
+    imagenes: List[Path] = []
+    rutas_visitadas = set()
+
+    def _agregar_imagenes(desde: Path) -> None:
+        try:
+            archivos = [
+                archivo
+                for archivo in desde.iterdir()
+                if archivo.is_file() and archivo.suffix.lower() in AREA_IMAGE_EXTENSIONS
+            ]
+        except FileNotFoundError:
+            return
+
+        for archivo in natsorted(archivos, key=lambda p: p.name):
+            if archivo in rutas_visitadas:
+                continue
+            rutas_visitadas.add(archivo)
+            imagenes.append(archivo)
+
+    visitas_candidatas: List[Path] = []
+
+    if visita_id is not None:
+        texto = str(visita_id).strip()
+        if texto:
+            visita_dir = base_dir / texto
+            if visita_dir.exists() and visita_dir.is_dir():
+                visitas_candidatas.append(visita_dir)
+
+    if not visitas_candidatas:
+        visitas_candidatas.append(base_dir)
+
+    for visita_dir in visitas_candidatas:
+        try:
+            carpetas = [ruta for ruta in visita_dir.iterdir() if ruta.is_dir()]
+        except FileNotFoundError:
             continue
 
-        archivos = [
-            archivo
-            for archivo in carpeta.iterdir()
-            if archivo.is_file() and archivo.suffix.lower() in AREA_IMAGE_EXTENSIONS
-        ]
-        imagenes.extend(natsorted(archivos, key=lambda p: p.name))
+        for carpeta in carpetas:
+            nombre_carpeta = carpeta.name
+            slug_carpeta = _slugify(nombre_carpeta)
+            if nombre_carpeta in candidatos or slug_carpeta in slug_candidatos:
+                _agregar_imagenes(carpeta)
+                continue
+
+            try:
+                subcarpetas = [ruta for ruta in carpeta.iterdir() if ruta.is_dir()]
+            except FileNotFoundError:
+                continue
+
+            for subcarpeta in subcarpetas:
+                nombre_subcarpeta = subcarpeta.name
+                slug_subcarpeta = _slugify(nombre_subcarpeta)
+                if nombre_subcarpeta in candidatos or slug_subcarpeta in slug_candidatos:
+                    _agregar_imagenes(subcarpeta)
 
     return imagenes
 
@@ -419,7 +461,7 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
             doc,
             "1.2 Información centro de trabajo",
             [
-                ("CUV / Código IST", row_centro.get('cuv', '')),
+                ("CUV/CECO/Código IST", row_centro.get('cuv', '')),
                 ("Nombre de Local", row_centro.get('nombre_ct', '').lower().title()),
                 ("Dirección", row_centro.get('direccion_ct', '')),
                 ("Comuna", row_centro.get('comuna_ct', '')),
@@ -793,8 +835,18 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
                 if not disponibles.empty:
                     area_id = disponibles.iloc[0]
 
+            visita_id = None
+            for columna in ("visita_id", "id_visita"):
+                if columna not in group.columns:
+                    continue
+                disponibles = group[columna].dropna()
+                if disponibles.empty:
+                    continue
+                visita_id = disponibles.iloc[0]
+                break
+
             observaciones = _formatear_observaciones_general(group, obs_cols)
-            imagenes = _listar_imagenes_area(area_id, area)
+            imagenes = _listar_imagenes_area(area_id, area, visita_id)
 
             anexos_info.append(
                 {
@@ -1598,7 +1650,15 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
             if not observacion:
                 observacion = "Sin observaciones registradas."
             area_id = fila.get("area_id")
-            imagenes = _listar_imagenes_area(area_id, nombre)
+
+            visita_id = None
+            for columna in ("visita_id", "id_visita"):
+                valor = fila.get(columna)
+                if pd.notna(valor):
+                    visita_id = valor
+                    break
+
+            imagenes = _listar_imagenes_area(area_id, nombre, visita_id)
             anexos_info_vent.append(
                 {
                     "nombre": nombre,
