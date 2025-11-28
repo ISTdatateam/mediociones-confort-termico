@@ -432,11 +432,11 @@ def process_excel_row(row, ctx: DBContext, args) -> None:
 def main():
     """
     Versión sin CLI: usa ruta fija y flags editables en el código.
-    - Excel fijo: extraccion_local/resultados_unificados.xlsx
+    - Excel fijo: etl/resultados_unificados.xlsx
     - Flags por defecto: crear usuarios/centros faltantes = True
     """
 
-    EXCEL_PATH = r"C:\Users\Quantum-Malloco\mediociones-confort-termico\extraccion_local\resultados_unificados.xlsx"
+    EXCEL_PATH = r"/etl\resultados_unificados.xlsx"
     CREATE_MISSING_USUARIOS = True   # cambia a False si no quieres crear usuarios automáticamente
     CREATE_MISSING_CENTROS = True    # cambia a False si no quieres crear centros automáticamente
     # Conexión a BD usando mysql_utils.py (variables de entorno)
