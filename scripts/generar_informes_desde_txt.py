@@ -98,12 +98,16 @@ def _generar_informe_ventilacion(
         return None
 
     df_puntos = get_puntos_ventilacion_df(id_visita)
+    df_puntos = pd.DataFrame(df_puntos or [])
+    df_equipos = get_equipos()
     if df_puntos is None:
         df_puntos = pd.DataFrame()
     elif not isinstance(df_puntos, pd.DataFrame):
         df_puntos = pd.DataFrame(df_puntos)
 
-    doc_bytes = generar_informe_ventilacion_en_word(df_centro, df_visita, df_areas, df_puntos)
+    doc_bytes = generar_informe_ventilacion_en_word(
+        df_centro, df_visita, df_areas, df_puntos, df_equipos
+    )
     if not doc_bytes:
         logging.error(
             "No se pudo generar el informe de ventilación para la visita %s", id_visita

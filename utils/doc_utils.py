@@ -231,6 +231,101 @@ def _agregar_seccion_anexos(doc: Document, informacion_areas: List[dict]):
                 run.add_break()
         else:
             fotos_cell.text = "Sin registro fotográfico."
+
+
+def _agregar_anexo_equipos(
+    doc: Document, df_visitas: pd.DataFrame, df_equipos: pd.DataFrame
+) -> None:
+    """Agrega el anexo de instrumentos utilizados en la evaluación.
+
+    Este bloque replica la estructura utilizada en el informe de confort térmico
+    para listar los equipos de medición y sus respaldos.
+    """
+
+    if df_visitas.empty or df_equipos.empty:
+        doc.add_paragraph("No se encontró información de la visita o de los equipos.")
+        return
+
+    row_visita = df_visitas.iloc[0]
+
+    codigos_en_uso = [
+        str(row_visita.get("equipo_temp", "")).strip(),
+        str(row_visita.get("equipo_vel_air", "")).strip(),
+    ]
+
+    df_equipos = df_equipos.copy()
+    if not df_equipos.empty and "id_equipo" in df_equipos.columns:
+        df_equipos["id_equipo"] = df_equipos["id_equipo"].astype(str)
+
+    df_equipos_filtrado = df_equipos[df_equipos["id_equipo"].isin(codigos_en_uso)]
+
+    field_mapping = {
+        "nombre_equipo": "Tipo de equipo",
+        "cod_equipo": "Código",
+        "n_serie_equipo": "Número de serie",
+        "marca_equipo": "Marca",
+        "modelo_equipo": "Modelo",
+        "fecha_calibracion": "Última calibración",
+        "prox_calibracion": "Próxima calibración",
+        "empresa_certificadora": "Empresa certificadora",
+        "num_certificado": "Número de certificado",
+        "url_certificado": "Respaldo certificado",
+    }
+
+    if df_equipos_filtrado.empty:
+        doc.add_paragraph(
+            "No se encontró información de equipos de medición relacionados con la visita."
+        )
+        return
+
+    for _, row_eq in df_equipos_filtrado.iterrows():
+        tabla_equipo = doc.add_table(rows=len(field_mapping), cols=2)
+        tabla_equipo.style = "Table Grid"
+        for row_num, (key, display_name) in enumerate(field_mapping.items()):
+            tabla_equipo.rows[row_num].cells[0].text = display_name
+            if key == "url_certificado":
+                url = str(row_eq.get(key, ""))
+                if url.strip():
+                    qr_img = generate_qr_code(url)
+                    cell = tabla_equipo.rows[row_num].cells[1]
+                    cell.text = ""
+                    run = cell.paragraphs[0].add_run()
+                    run.add_break()
+                    run.add_picture(qr_img, width=Inches(1))
+                    run.add_break()
+                else:
+                    tabla_equipo.rows[row_num].cells[1].text = ""
+            else:
+                tabla_equipo.rows[row_num].cells[1].text = str(row_eq.get(key, ""))
+
+        set_column_width(tabla_equipo, 0, Cm(3.5))
+        set_column_width(tabla_equipo, 1, Cm(13.5))
+        doc.add_paragraph("")
+
+    for row_eq in df_equipos_filtrado.itertuples():
+        id_equipo = str(row_eq.id_equipo)
+        img_dir = os.path.join("imagenes_pdf", id_equipo)
+
+        try:
+            if os.path.exists(img_dir) and os.path.isdir(img_dir):
+                imagenes = natsorted(
+                    [
+                        os.path.join(img_dir, f)
+                        for f in os.listdir(img_dir)
+                        if f.lower().endswith((".png", ".jpg", ".jpeg"))
+                    ]
+                )
+
+                for img_path in imagenes:
+                    doc.add_picture(img_path, width=Cm(17))
+            else:
+                doc.add_paragraph(
+                    f"No se encontraron imágenes para el equipo {id_equipo}"
+                )
+        except Exception as exc:
+            doc.add_paragraph(
+                f"Error al cargar imágenes para equipo {id_equipo}: {exc}"
+            )
 def agregar_medidas_correctivas(doc, df_mediciones, areas_no_cumplen):
     # 1. Medidas Ingenieriles (solo para áreas no conformes)
     medidas_ingenieriles = []
@@ -996,87 +1091,7 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
     # Salto de página y título del anexo
     doc.add_page_break()
     doc.add_heading("Anexo 2. Instrumentos de medición utilizados", level=2)
-
-    if not df_visitas.empty and not df_equipos.empty:
-        row_visita = df_visitas.iloc[0]
-        # Obtener los códigos de equipos que están en uso en la visita
-        equipo_temp_cod = row_visita.get('equipo_temp', '')
-        equipo_vel_cod = row_visita.get('equipo_vel_air', '')
-        codigos_en_uso = [equipo_temp_cod, equipo_vel_cod]
-
-        # Filtrar df_equipos para que solo incluya las filas donde 'id_equipo' está en codigos_en_uso
-        df_equipos_filtrado = df_equipos[df_equipos['id_equipo'].isin(codigos_en_uso)]
-
-        # Definir el mapeo de campos a mostrar
-        field_mapping = {
-            "nombre_equipo": "Tipo de equipo",
-            "cod_equipo": "Código",
-            "n_serie_equipo": "Número de serie",
-            "marca_equipo": "Marca",
-            "modelo_equipo": "Modelo",
-            "fecha_calibracion": "Última calibración",
-            "prox_calibracion": "Próxima calibración",
-            "empresa_certificadora": "Empresa certificadora",
-            "num_certificado": "Número de certificado",
-            "url_certificado": "Respaldo certificado"
-        }
-
-        if not df_equipos_filtrado.empty:
-            for idx, row_eq in df_equipos_filtrado.iterrows():
-                # Crear una tabla de dos columnas para los datos del equipo
-                tabla_equipo = doc.add_table(rows=len(field_mapping), cols=2)
-                tabla_equipo.style = 'Table Grid'
-                for row_num, (key, display_name) in enumerate(field_mapping.items()):
-                    tabla_equipo.rows[row_num].cells[0].text = display_name
-                    if key == "url_certificado":
-                        url = str(row_eq.get(key, ""))
-                        if url.strip():
-                            # Genera un código QR (función asumida)
-                            qr_img = generate_qr_code(url)
-                            cell = tabla_equipo.rows[row_num].cells[1]
-                            cell.text = ""
-                            run = cell.paragraphs[0].add_run()
-                            run.add_break()
-                            run.add_picture(qr_img, width=Inches(1))
-                            run.add_break()
-                        else:
-                            tabla_equipo.rows[row_num].cells[1].text = ""
-                    else:
-                        tabla_equipo.rows[row_num].cells[1].text = str(row_eq.get(key, ""))
-                # Ajustar anchos de columnas para toda la tabla (se recomienda hacerlo fuera del bucle interno)
-                set_column_width(tabla_equipo, 0, Cm(3.5))
-                set_column_width(tabla_equipo, 1, Cm(13.5))
-
-                doc.add_paragraph("")  # Separador entre tablas
-
-            for idx, row_eq in enumerate(df_equipos_filtrado.itertuples(), 1):
-                id_equipo = str(row_eq.id_equipo)  # Asegúrate que este campo coincide con tus directorios
-
-                # Ruta al directorio de imágenes para este equipo
-                img_dir = os.path.join("imagenes_pdf", id_equipo)
-
-                try:
-                    if os.path.exists(img_dir) and os.path.isdir(img_dir):
-                        # Obtener todas las imágenes ordenadas numéricamente
-                        imagenes = natsorted([
-                            os.path.join(img_dir, f)
-                            for f in os.listdir(img_dir)
-                            if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-                        ])
-
-                        # Insertar todas las imágenes en el documento
-                        for img_path in imagenes:
-                            # Añadir imagen ocupando el ancho completo de la página
-                            doc.add_picture(img_path, width=Cm(17))
-                    else:
-                        doc.add_paragraph(f"No se encontraron imágenes para el equipo {id_equipo}")
-                except Exception as e:
-                    doc.add_paragraph(f"Error al cargar imágenes para equipo {id_equipo}: {str(e)}")
-
-        else:
-            doc.add_paragraph("No se encontró información de equipos de medición relacionados con la visita.")
-    else:
-        doc.add_paragraph("No se encontró información de la visita o de los equipos.")
+    _agregar_anexo_equipos(doc, df_visitas, df_equipos)
 
     # (Continúa el resto del script si es necesario)
 
@@ -1097,7 +1112,9 @@ def _texto_cumplimiento(valor):
     return ""
 
 
-def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_puntos) -> BytesIO:
+def generar_informe_ventilacion_en_word(
+    df_centros, df_visitas, df_areas, df_puntos, df_equipos=None
+) -> BytesIO:
     """Genera un informe en Word para la evaluación de ventilación."""
 
     if not isinstance(df_visitas, pd.DataFrame):
@@ -1106,10 +1123,13 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
         df_areas = pd.DataFrame(df_areas or [])
     if not isinstance(df_puntos, pd.DataFrame):
         df_puntos = pd.DataFrame(df_puntos or [])
+    if not isinstance(df_equipos, pd.DataFrame):
+        df_equipos = pd.DataFrame(df_equipos or [])
 
     df_visitas = df_visitas.copy()
     df_areas = df_areas.copy()
     df_puntos = df_puntos.copy()
+    df_equipos = df_equipos.copy()
 
     format_columns(df_visitas, ["nombre_personal_visita", "consultor_ist", "consultor_cargo", "consultor_zonal"], mode="title")
     if not df_areas.empty:
@@ -1669,6 +1689,10 @@ def generar_informe_ventilacion_en_word(df_centros, df_visitas, df_areas, df_pun
 
     doc.add_page_break()
     _agregar_seccion_anexos(doc, anexos_info_vent)
+
+    doc.add_paragraph()
+    doc.add_heading("Anexo 2. Instrumentos de medición utilizados", level=2)
+    _agregar_anexo_equipos(doc, df_visitas, df_equipos)
 
     buffer = BytesIO()
     doc.save(buffer)

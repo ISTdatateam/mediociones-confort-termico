@@ -11,6 +11,7 @@ from utils.helpers import (
     get_visitas_por_cuv,
     get_areas_ventilacion_df,
     get_puntos_ventilacion_df,
+    get_equipos,
 )
 from utils.doc_utils import generar_informe_ventilacion_en_word
 from utils.report_data import formatear_fecha
@@ -78,6 +79,8 @@ def generar_descarga_informe(cuv: Union[str, int], visita_id: int) -> BytesIO:
     if not isinstance(df_puntos, pd.DataFrame):
         df_puntos = pd.DataFrame(df_puntos or [])
 
+    df_equipos = get_equipos()
+
     cumple_series = pd.to_numeric(
         df_areas.get("m3_porpersona_cumple"), errors="coerce"
     ).fillna(0)
@@ -130,7 +133,7 @@ def generar_descarga_informe(cuv: Union[str, int], visita_id: int) -> BytesIO:
             )
 
     informe_docx = generar_informe_ventilacion_en_word(
-        df_centro, df_visita, df_areas, df_puntos
+        df_centro, df_visita, df_areas, df_puntos, df_equipos
     )
     if isinstance(informe_docx, BytesIO):
         informe_docx.seek(0)
