@@ -487,7 +487,7 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
                     "Cargo de la persona que acompaña visita",
                     row_visita.get('cargo_personal_visita', '').lower().title(),
                 ),
-                ("Revisor del informe", "[COMPLETAR]"),
+                ("Revisor del informe", "Rodrigo Novoa Miranda"),
                 ("Jefatura responsable IST", "[COMPLETAR]"),
                 ("Destinatario informe", "[COMPLETAR]"),
             ],
