@@ -137,8 +137,18 @@ def _generar_informe(
         return None
 
     tipo_lower = tipo.lower()
+    tipo_evaluacion_visita = str(df_visita.iloc[0].get("tipo_evaluacion", "")).lower()
     if tipo_lower == "auto":
-        tipo_lower = str(df_visita.iloc[0].get("tipo_evaluacion", "")).lower()
+        tipo_lower = tipo_evaluacion_visita or "confort"
+    elif tipo_evaluacion_visita and tipo_lower != tipo_evaluacion_visita:
+        logging.error(
+            "La visita %s está registrada con tipo '%s' (columna tipo_evaluacion de la tabla visitas) "
+            "y no coincide con el tipo solicitado '%s'.",
+            id_visita,
+            tipo_evaluacion_visita,
+            tipo_lower,
+        )
+        return None
 
     if tipo_lower == "ventilacion":
         return _generar_informe_ventilacion(
