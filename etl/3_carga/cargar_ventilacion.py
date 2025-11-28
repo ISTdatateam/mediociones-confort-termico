@@ -56,6 +56,17 @@ def _clean_value(value):
     return value
 
 
+def _to_float(value):
+    if value is None or pd.isna(value):
+        return None
+    try:
+        if isinstance(value, str):
+            value = value.replace(",", ".")
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _with_defaults(area: Dict) -> Dict:
     defaults = {
         "m3_porpersona_594": 10.0,
@@ -72,6 +83,70 @@ def _with_defaults(area: Dict) -> Dict:
     for key, value in defaults.items():
         if area.get(key) is None:
             area[key] = value
+    return area
+
+
+def _compute_area_calculations(area: Dict, puntos_df: pd.DataFrame) -> Dict:
+    area = _with_defaults(area)
+
+    largo = _to_float(area.get("largo_m"))
+    ancho = _to_float(area.get("ancho_m"))
+    alto = _to_float(area.get("alto_m"))
+
+    volumen = _to_float(area.get("volumen_m3"))
+    if volumen is None and None not in (largo, ancho, alto):
+        volumen = largo * ancho * alto
+        area["volumen_m3"] = volumen
+
+    aforo = _to_float(area.get("aforo_permitido"))
+    area["aforo_permitido"] = aforo
+
+    puntos_area = puntos_df
+    if not puntos_df.empty and "area_id" in puntos_df.columns:
+        puntos_area = puntos_df[puntos_df["area_id"] == area.get("area_id")]
+
+    def _sum_caudal(df: pd.DataFrame, tipo: str) -> float:
+        if df.empty or "tipo_punto" not in df.columns:
+            return 0.0
+        mask = df["tipo_punto"].fillna("").astype(str).str.lower() == tipo
+        caudales = df.loc[mask, "caudal"] if "caudal" in df.columns else pd.Series(dtype=float)
+        return float(
+            caudales.apply(_to_float).fillna(0).sum()
+        )
+
+    total_inyeccion = _sum_caudal(puntos_area, "inyeccion")
+    total_extraccion = _sum_caudal(puntos_area, "extraccion")
+    area["caudal_inyeccion_total"] = total_inyeccion
+    area["caudal_extraccion_total"] = total_extraccion
+
+    m3_pp_ref = _to_float(area.get("m3_porpersona_594")) or 10.0
+    m3_pp_hora_ref = _to_float(area.get("m3_porpersona_hora_594")) or 20.0
+    recambio_min = _to_float(area.get("recambio_hora_594_min")) or 0.0
+    recambio_max = _to_float(area.get("recambio_hora_594_max")) or 0.0
+
+    m3_pp = (volumen / aforo) if (volumen is not None and aforo and aforo > 0) else None
+    area["m3_porpersona"] = m3_pp
+    area["m3_porpersona_cumple"] = 1 if (m3_pp is not None and m3_pp >= m3_pp_ref) else 0
+
+    max_caudal = max(total_inyeccion, total_extraccion)
+    m3_pp_hora = (max_caudal / aforo) if (aforo and aforo > 0) else None
+    area["m3_porpersona_hora"] = m3_pp_hora
+    area["m3_porpersona_hora_cumple"] = (
+        1 if (m3_pp_hora is not None and m3_pp_hora >= m3_pp_hora_ref) else 0
+    )
+
+    recambio_hora = (max_caudal / volumen) if (volumen and volumen > 0) else None
+    area["recambio_hora"] = recambio_hora
+    area["recambio_hora_cumple"] = (
+        1
+        if (
+            recambio_hora is not None
+            and recambio_hora >= recambio_min
+            and (recambio_max == 0 or recambio_hora <= recambio_max)
+        )
+        else 0
+    )
+
     return area
 
 
@@ -237,6 +312,7 @@ def _process_visita(cursor, visita_data: Dict, areas_df: pd.DataFrame, puntos_df
             area_data["area_id"] = f"{visita_id}-A{idx + 1}"
         area_data["visita_id"] = visita_id
         area_data["centro_id"] = visita_data["cuv_visita"]
+        area_data = _compute_area_calculations(area_data, puntos_df)
         _insert_area(cursor, area_data)
 
     if not puntos_df.empty:

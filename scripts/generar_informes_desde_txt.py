@@ -1,0 +1,118 @@
+"""Genera informes DOCX a partir de un archivo de texto con IDs de visita.
+
+Este script lee un archivo ``.txt`` que contenga un ID de visita por línea y
+construye los informes Word utilizando las funciones existentes del proyecto.
+Los documentos generados se organizan en carpetas por consultor IST.
+"""
+from __future__ import annotations
+
+import argparse
+import logging
+from pathlib import Path
+from typing import Iterable, List, Optional
+
+import pandas as pd
+
+from utils.doc_utils import generar_informe_en_word
+from utils.helpers import get_ct, get_equipos, get_mediciones, get_visita
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+
+def _leer_ids_desde_txt(ruta_txt: Path) -> List[int]:
+    ids: List[int] = []
+    with ruta_txt.open("r", encoding="utf-8") as archivo:
+        for linea in archivo:
+            linea = linea.strip()
+            if not linea or linea.startswith("#"):
+                continue
+            try:
+                ids.append(int(linea))
+            except ValueError:
+                logging.warning("Línea ignorada (no es un ID válido): %s", linea)
+    return ids
+
+
+def _nombre_carpeta_consultor(df_visita: pd.DataFrame) -> str:
+    fila = df_visita.iloc[0]
+    for campo in ("consultor_nombre", "consultor_ist"):
+        valor = fila.get(campo)
+        if isinstance(valor, str) and valor.strip():
+            return valor.strip()
+    return "desconocido"
+
+
+def _generar_informe(id_visita: int, destino_base: Path) -> Optional[Path]:
+    df_visita = get_visita(id_visita)
+    if df_visita.empty:
+        logging.error("No se encontró la visita con ID %s", id_visita)
+        return None
+
+    cuv = df_visita.iloc[0].get("cuv_visita")
+    if pd.isna(cuv):
+        logging.error("La visita %s no tiene CUV asociado", id_visita)
+        return None
+
+    df_centro = pd.DataFrame(get_ct(cuv))
+    if df_centro.empty:
+        logging.error("No se encontró el centro de trabajo para CUV %s", cuv)
+        return None
+
+    df_mediciones = get_mediciones(id_visita)
+    if df_mediciones.empty:
+        logging.error("No hay mediciones para la visita %s", id_visita)
+        return None
+
+    df_equipos = get_equipos()
+    doc_bytes = generar_informe_en_word(df_centro, df_visita, df_mediciones, df_equipos)
+    if not doc_bytes:
+        logging.error("No se pudo generar el informe para la visita %s", id_visita)
+        return None
+
+    carpeta_consultor = destino_base / _nombre_carpeta_consultor(df_visita)
+    carpeta_consultor.mkdir(parents=True, exist_ok=True)
+
+    nombre_archivo = f"informe_cuv_{cuv}_visita_{id_visita}.docx"
+    ruta_archivo = carpeta_consultor / nombre_archivo
+    with ruta_archivo.open("wb") as salida:
+        salida.write(doc_bytes.getvalue())
+
+    return ruta_archivo
+
+
+def generar_informes(ids: Iterable[int], salida: Path) -> List[Path]:
+    salida.mkdir(parents=True, exist_ok=True)
+    generados: List[Path] = []
+    for id_visita in ids:
+        logging.info("Generando informe para visita %s", id_visita)
+        ruta = _generar_informe(id_visita, salida)
+        if ruta:
+            logging.info("Informe guardado en %s", ruta)
+            generados.append(ruta)
+    return generados
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "archivo",
+        type=Path,
+        help="Ruta al archivo .txt que contiene un ID de visita por línea",
+    )
+    parser.add_argument(
+        "--salida",
+        type=Path,
+        default=Path("informes_generados"),
+        help="Directorio donde se guardarán los informes generados",
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    argumentos = parse_args()
+    ids = _leer_ids_desde_txt(argumentos.archivo)
+    if not ids:
+        logging.error("El archivo no contiene IDs de visita válidos.")
+    else:
+        rutas = generar_informes(ids, argumentos.salida)
+        logging.info("Se generaron %s informe(s).", len(rutas))
