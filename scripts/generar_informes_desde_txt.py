@@ -18,8 +18,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.append(str(BASE_DIR))
 
-from utils.doc_utils import generar_informe_en_word
-from utils.helpers import get_ct, get_equipos, get_mediciones, get_visita
+from utils.doc_utils import generar_informe_en_word, generar_informe_ventilacion_en_word
+from utils.helpers import (
+    get_areas_ventilacion_df,
+    get_ct,
+    get_equipos,
+    get_mediciones,
+    get_puntos_ventilacion_df,
+    get_visita,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -47,22 +54,13 @@ def _nombre_carpeta_consultor(df_visita: pd.DataFrame) -> str:
     return "desconocido"
 
 
-def _generar_informe(id_visita: int, destino_base: Path) -> Optional[Path]:
-    df_visita = get_visita(id_visita)
-    if df_visita.empty:
-        logging.error("No se encontró la visita con ID %s", id_visita)
-        return None
-
-    cuv = df_visita.iloc[0].get("cuv_visita")
-    if pd.isna(cuv):
-        logging.error("La visita %s no tiene CUV asociado", id_visita)
-        return None
-
-    df_centro = pd.DataFrame(get_ct(cuv))
-    if df_centro.empty:
-        logging.error("No se encontró el centro de trabajo para CUV %s", cuv)
-        return None
-
+def _generar_informe_confort(
+    id_visita: int,
+    destino_base: Path,
+    df_visita: pd.DataFrame,
+    cuv: int,
+    df_centro: pd.DataFrame,
+) -> Optional[Path]:
     df_mediciones = get_mediciones(id_visita)
     if df_mediciones.empty:
         logging.error("No hay mediciones para la visita %s", id_visita)
@@ -85,12 +83,83 @@ def _generar_informe(id_visita: int, destino_base: Path) -> Optional[Path]:
     return ruta_archivo
 
 
-def generar_informes(ids: Iterable[int], salida: Path) -> List[Path]:
+def _generar_informe_ventilacion(
+    id_visita: int,
+    destino_base: Path,
+    df_visita: pd.DataFrame,
+    cuv: int,
+    df_centro: pd.DataFrame,
+) -> Optional[Path]:
+    df_areas = get_areas_ventilacion_df(id_visita)
+    if df_areas.empty:
+        logging.error(
+            "No existen áreas de ventilación registradas para la visita %s", id_visita
+        )
+        return None
+
+    df_puntos = get_puntos_ventilacion_df(id_visita)
+    df_puntos = pd.DataFrame(df_puntos or [])
+
+    doc_bytes = generar_informe_ventilacion_en_word(df_centro, df_visita, df_areas, df_puntos)
+    if not doc_bytes:
+        logging.error(
+            "No se pudo generar el informe de ventilación para la visita %s", id_visita
+        )
+        return None
+
+    carpeta_consultor = destino_base / _nombre_carpeta_consultor(df_visita)
+    carpeta_consultor.mkdir(parents=True, exist_ok=True)
+
+    nombre_archivo = f"informe_ventilacion_cuv_{cuv}_visita_{id_visita}.docx"
+    ruta_archivo = carpeta_consultor / nombre_archivo
+    with ruta_archivo.open("wb") as salida:
+        salida.write(doc_bytes.getvalue())
+
+    return ruta_archivo
+
+
+def _generar_informe(
+    id_visita: int, destino_base: Path, tipo: str = "confort"
+) -> Optional[Path]:
+    df_visita = get_visita(id_visita)
+    if df_visita.empty:
+        logging.error("No se encontró la visita con ID %s", id_visita)
+        return None
+
+    cuv = df_visita.iloc[0].get("cuv_visita")
+    if pd.isna(cuv):
+        logging.error("La visita %s no tiene CUV asociado", id_visita)
+        return None
+
+    df_centro = pd.DataFrame(get_ct(cuv))
+    if df_centro.empty:
+        logging.error("No se encontró el centro de trabajo para CUV %s", cuv)
+        return None
+
+    tipo_lower = tipo.lower()
+    if tipo_lower == "auto":
+        tipo_lower = str(df_visita.iloc[0].get("tipo_evaluacion", "")).lower()
+
+    if tipo_lower == "ventilacion":
+        return _generar_informe_ventilacion(
+            id_visita, destino_base, df_visita, cuv, df_centro
+        )
+
+    if tipo_lower != "confort":
+        logging.error("Tipo de informe no soportado: %s", tipo)
+        return None
+
+    return _generar_informe_confort(
+        id_visita, destino_base, df_visita, cuv, df_centro
+    )
+
+
+def generar_informes(ids: Iterable[int], salida: Path, tipo: str = "confort") -> List[Path]:
     salida.mkdir(parents=True, exist_ok=True)
     generados: List[Path] = []
     for id_visita in ids:
         logging.info("Generando informe para visita %s", id_visita)
-        ruta = _generar_informe(id_visita, salida)
+        ruta = _generar_informe(id_visita, salida, tipo=tipo)
         if ruta:
             logging.info("Informe guardado en %s", ruta)
             generados.append(ruta)
@@ -111,6 +180,15 @@ def parse_args() -> argparse.Namespace:
         default=Path("informes_generados"),
         help="Directorio donde se guardarán los informes generados",
     )
+    parser.add_argument(
+        "--tipo",
+        choices=["confort", "ventilacion", "auto"],
+        default="confort",
+        help=(
+            "Tipo de informe a generar: confort térmico, ventilación o auto para "
+            "inferirlo desde la visita"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -120,5 +198,5 @@ if __name__ == "__main__":
     if not ids:
         logging.error("El archivo no contiene IDs de visita válidos.")
     else:
-        rutas = generar_informes(ids, argumentos.salida)
+        rutas = generar_informes(ids, argumentos.salida, tipo=argumentos.tipo)
         logging.info("Se generaron %s informe(s).", len(rutas))
