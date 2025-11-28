@@ -9,9 +9,14 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+import sys
 from typing import Iterable, List, Optional
 
 import pandas as pd
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.append(str(BASE_DIR))
 
 from utils.doc_utils import generar_informe_en_word
 from utils.helpers import get_ct, get_equipos, get_mediciones, get_visita
