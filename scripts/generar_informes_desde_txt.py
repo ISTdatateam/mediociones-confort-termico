@@ -95,9 +95,10 @@ def generar_informes(ids: Iterable[int], salida: Path) -> List[Path]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "archivo",
+        "--archivo",
         type=Path,
-        help="Ruta al archivo .txt que contiene un ID de visita por línea",
+        default=Path(__file__).with_name("informes.txt"),
+        help="Ruta al archivo .txt que contiene un ID de visita por línea (por defecto scripts/informes.txt)",
     )
     parser.add_argument(
         "--salida",
