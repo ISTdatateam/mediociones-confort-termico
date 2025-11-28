@@ -119,7 +119,7 @@ def _generar_informe_ventilacion(
 
 
 def _generar_informe(
-    id_visita: int, destino_base: Path, tipo: str = "confort"
+    id_visita: int, destino_base: Path, tipo: str = "auto"
 ) -> Optional[Path]:
     df_visita = get_visita(id_visita)
     if df_visita.empty:
@@ -164,7 +164,7 @@ def _generar_informe(
     )
 
 
-def generar_informes(ids: Iterable[int], salida: Path, tipo: str = "confort") -> List[Path]:
+def generar_informes(ids: Iterable[int], salida: Path, tipo: str = "auto") -> List[Path]:
     salida.mkdir(parents=True, exist_ok=True)
     generados: List[Path] = []
     for id_visita in ids:
@@ -193,7 +193,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tipo",
         choices=["confort", "ventilacion", "auto"],
-        default="confort",
+        default="auto",
         help=(
             "Tipo de informe a generar: confort térmico, ventilación o auto para "
             "inferirlo desde la visita"
