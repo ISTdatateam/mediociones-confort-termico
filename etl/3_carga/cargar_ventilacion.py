@@ -1,18 +1,3 @@
-"""Script de carga para evaluaciones de ventilación.
-
-Lee un archivo Excel con la información de la visita, las áreas y los
-puntos de medición, e inserta los datos en las tablas `visitas`, `v_areas`
-y `v_puntos_medicion`.
-
-Se espera un Excel con tres hojas:
-- "visita" o "visitas": una sola fila con los datos generales.
-- "areas" o "v_areas": varias filas con las áreas levantadas.
-- "puntos" o "v_puntos": puntos asociados a las áreas.
-
-Las columnas deben coincidir con los nombres de las tablas; las columnas
-auto-generadas (id) no son necesarias en el Excel. Los centros de trabajo
-y los usuarios (consultor) deben existir previamente.
-"""
 from __future__ import annotations
 
 import os
@@ -69,6 +54,25 @@ def _clean_value(value):
     if pd.isna(value) or (isinstance(value, str) and value.strip() == ""):
         return None
     return value
+
+
+def _with_defaults(area: Dict) -> Dict:
+    defaults = {
+        "m3_porpersona_594": 10.0,
+        "m3_porpersona_cumple": 0,
+        "caudal_inyeccion_total": 0.0,
+        "caudal_extraccion_total": 0.0,
+        "m3_porpersona_hora_594": 20.0,
+        "m3_porpersona_hora_cumple": 0,
+        "recambio_hora_594_min": 6.0,
+        "recambio_hora_594_max": 60.0,
+        "recambio_hora_cumple": 0,
+    }
+
+    for key, value in defaults.items():
+        if area.get(key) is None:
+            area[key] = value
+    return area
 
 
 def _parse_date(value) -> Optional[date]:
@@ -138,6 +142,7 @@ def _insert_visita(cursor, visita: Dict) -> int:
 
 
 def _insert_area(cursor, area: Dict):
+    area = _with_defaults(area)
     query = (
         "INSERT INTO v_areas (area_id, visita_id, centro_id, codigo_area, nombre_area, uso, piso_nivel, "
         "largo_m, ancho_m, alto_m, volumen_m3, aforo_permitido, m3_porpersona, m3_porpersona_594, "
@@ -191,177 +196,50 @@ def _insert_punto(cursor, punto: Dict):
     cursor.execute(query, punto)
 
 
-def cargar_archivo(ruta_excel: str) -> int:
-    xls = pd.ExcelFile(ruta_excel)
+def _process_visita(cursor, visita_data: Dict, areas_df: pd.DataFrame, puntos_df: pd.DataFrame) -> int:
+    visita_id = _insert_visita(cursor, visita_data)
 
-    visita_sheet = _first_available_sheet(xls, ["visita", "visitas"])
-    visita_df = xls.parse(visita_sheet)
-    visita_df = _apply_aliases(
-        visita_df,
-        {
-            "cuv": "cuv_visita",
-            "cuv_visita": "cuv_visita",
-            "fecha": "fecha_visita",
-            "fecha_visita": "fecha_visita",
-            "hora": "hora_visita",
-            "hora_visita": "hora_visita",
-            "motivo": "motivo_evaluacion",
-            "motivo_evaluacion": "motivo_evaluacion",
-            "personal_visita": "nombre_personal_visita",
-            "nombre_personal_visita": "nombre_personal_visita",
-            "cargo": "cargo_personal_visita",
-            "cargo_personal_visita": "cargo_personal_visita",
-            "consultor": "consultor_ist",
-            "consultor_ist": "consultor_ist",
-            "nota": "note_visita",
-            "note_visita": "note_visita",
-            "consultor_cargo": "consultor_cargo",
-            "consultor_zonal": "consultor_zonal",
-        },
-    )
-    if visita_df.empty:
-        raise ValueError("La hoja de visita está vacía")
-
-    visita_cols = [
-        "cuv_visita",
-        "fecha_visita",
-        "hora_visita",
-        "motivo_evaluacion",
-        "nombre_personal_visita",
-        "cargo_personal_visita",
-        "consultor_ist",
-        "note_visita",
-        "consultor_cargo",
-        "consultor_zonal",
+    area_cols = [
+        "area_id",
+        "codigo_area",
+        "nombre_area",
+        "uso",
+        "piso_nivel",
+        "largo_m",
+        "ancho_m",
+        "alto_m",
+        "volumen_m3",
+        "aforo_permitido",
+        "m3_porpersona",
+        "m3_porpersona_594",
+        "m3_porpersona_cumple",
+        "caudal_inyeccion_total",
+        "caudal_extraccion_total",
+        "m3_porpersona_hora",
+        "m3_porpersona_hora_594",
+        "m3_porpersona_hora_cumple",
+        "recambio_hora_594_min",
+        "recambio_hora_594_max",
+        "recambio_hora",
+        "recambio_hora_cumple",
+        "ocupacion_habitual",
+        "ventilacion_tipo",
+        "ventilacion_sistema",
+        "ventilacion_estado",
+        "aberturas",
+        "croquis_url",
+        "observaciones",
     ]
-    visita_data = _dict_from_row(visita_df.iloc[0], visita_cols)
-    visita_data["fecha_visita"] = _parse_date(visita_data["fecha_visita"])
-    visita_data["hora_visita"] = _parse_time(visita_data["hora_visita"])
 
-    areas_sheet = _first_available_sheet(xls, ["areas", "v_areas"])
-    areas_df = xls.parse(areas_sheet)
-    areas_df = _apply_aliases(
-        areas_df,
-        {
-            "id": "area_id",
-            "area_id": "area_id",
-            "codigo": "codigo_area",
-            "codigo_area": "codigo_area",
-            "nombre": "nombre_area",
-            "nombre_area": "nombre_area",
-            "uso": "uso",
-            "piso": "piso_nivel",
-            "piso_nivel": "piso_nivel",
-            "largo_m": "largo_m",
-            "ancho_m": "ancho_m",
-            "alto_m": "alto_m",
-            "volumen_m3": "volumen_m3",
-            "aforo": "aforo_permitido",
-            "aforo_permitido": "aforo_permitido",
-            "m3_persona": "m3_porpersona",
-            "m3_porpersona": "m3_porpersona",
-            "m3_porpersona_594": "m3_porpersona_594",
-            "m3_porpersona_cumple": "m3_porpersona_cumple",
-            "caudal_inyeccion_total": "caudal_inyeccion_total",
-            "caudal_extraccion_total": "caudal_extraccion_total",
-            "m3_porpersona_hora": "m3_porpersona_hora",
-            "m3_porpersona_hora_594": "m3_porpersona_hora_594",
-            "m3_porpersona_hora_cumple": "m3_porpersona_hora_cumple",
-            "recambio_hora_594_min": "recambio_hora_594_min",
-            "recambio_hora_594_max": "recambio_hora_594_max",
-            "recambio_hora": "recambio_hora",
-            "recambio_hora_cumple": "recambio_hora_cumple",
-            "ocupacion_habitual": "ocupacion_habitual",
-            "ventilacion_tipo": "ventilacion_tipo",
-            "ventilacion_sistema": "ventilacion_sistema",
-            "ventilacion_estado": "ventilacion_estado",
-            "aberturas": "aberturas",
-            "croquis_url": "croquis_url",
-            "observaciones": "observaciones",
-        },
-    )
+    for idx, row in areas_df.iterrows():
+        area_data = _dict_from_row(row, area_cols)
+        if not area_data.get("area_id"):
+            area_data["area_id"] = f"{visita_id}-A{idx + 1}"
+        area_data["visita_id"] = visita_id
+        area_data["centro_id"] = visita_data["cuv_visita"]
+        _insert_area(cursor, area_data)
 
-    puntos_sheet = _first_available_sheet(xls, ["puntos", "v_puntos"])
-    puntos_df = xls.parse(puntos_sheet)
-    puntos_df = _apply_aliases(
-        puntos_df,
-        {
-            "id": "punto_id",
-            "punto_id": "punto_id",
-            "area_id": "area_id",
-            "codigo": "codigo_punto",
-            "codigo_punto": "codigo_punto",
-            "tipo": "tipo_punto",
-            "tipo_punto": "tipo_punto",
-            "ubicacion_detalle": "ubicacion_detalle",
-            "altura_m": "altura_m",
-            "distancia_fuente_m": "distancia_fuente_m",
-            "conducto_largo_cm": "conducto_largo_cm",
-            "conducto_ancho_cm": "conducto_ancho_cm",
-            "conducto_diametro": "conducto_diametro",
-            "seccion_conducto_cm2": "seccion_conducto_cm2",
-            "medicion_caudal_1": "medicion_caudal_1",
-            "medicion_caudal_2": "medicion_caudal_2",
-            "medicion_caudal_3": "medicion_caudal_3",
-            "medicion_caudal_4": "medicion_caudal_4",
-            "medicion_caudal_5": "medicion_caudal_5",
-            "medicion_caudal_p": "medicion_caudal_p",
-            "caudal": "caudal",
-            "fecha_hora": "fecha_hora",
-            "condiciones_ocupacion": "condiciones_ocupacion",
-            "puertas_ventanas_abiertas": "puertas_ventanas_abiertas",
-            "temperatura_c": "temperatura_c",
-            "humedad_relativa_pct": "humedad_relativa_pct",
-            "croquis_url": "croquis_url",
-            "observaciones": "observaciones",
-        },
-    )
-
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        visita_id = _insert_visita(cursor, visita_data)
-
-        area_cols = [
-            "area_id",
-            "codigo_area",
-            "nombre_area",
-            "uso",
-            "piso_nivel",
-            "largo_m",
-            "ancho_m",
-            "alto_m",
-            "volumen_m3",
-            "aforo_permitido",
-            "m3_porpersona",
-            "m3_porpersona_594",
-            "m3_porpersona_cumple",
-            "caudal_inyeccion_total",
-            "caudal_extraccion_total",
-            "m3_porpersona_hora",
-            "m3_porpersona_hora_594",
-            "m3_porpersona_hora_cumple",
-            "recambio_hora_594_min",
-            "recambio_hora_594_max",
-            "recambio_hora",
-            "recambio_hora_cumple",
-            "ocupacion_habitual",
-            "ventilacion_tipo",
-            "ventilacion_sistema",
-            "ventilacion_estado",
-            "aberturas",
-            "croquis_url",
-            "observaciones",
-        ]
-
-        for idx, row in areas_df.iterrows():
-            area_data = _dict_from_row(row, area_cols)
-            if not area_data.get("area_id"):
-                area_data["area_id"] = f"{visita_id}-A{idx + 1}"
-            area_data["visita_id"] = visita_id
-            area_data["centro_id"] = visita_data["cuv_visita"]
-            _insert_area(cursor, area_data)
-
+    if not puntos_df.empty:
         punto_cols = [
             "punto_id",
             "area_id",
@@ -400,8 +278,197 @@ def cargar_archivo(ruta_excel: str) -> int:
                 punto_data["fecha_hora"] = pd.to_datetime(fecha_val)
             _insert_punto(cursor, punto_data)
 
+    return visita_id
+
+
+def _build_areas_from_wide_row(row: pd.Series) -> pd.DataFrame:
+    areas: List[Dict] = []
+    for idx in range(1, 12):
+        name = _clean_value(row.get(f"area_{idx}"))
+        if not name:
+            continue
+
+        area: Dict = {
+            "codigo_area": _clean_value(row.get(f"area_{idx}_bis")) or name,
+            "nombre_area": name,
+            "uso": _clean_value(row.get(f"area_{idx}_desc")),
+            "largo_m": _clean_value(row.get(f"largo_{idx}")),
+            "ancho_m": _clean_value(row.get(f"ancho_{idx}")),
+            "alto_m": _clean_value(row.get(f"alto_{idx}")),
+            "volumen_m3": _clean_value(row.get(f"volumen_{idx}")),
+            "aforo_permitido": _clean_value(row.get(f"n_personas_{idx}")),
+            "m3_porpersona": _clean_value(row.get(f"m3xpersona_{idx}")),
+        }
+        areas.append(area)
+    return pd.DataFrame(areas)
+
+
+def _parse_visita_row(row: pd.Series) -> Dict:
+    visita_data = {
+        "cuv_visita": _clean_value(row.get("cuv_visita")),
+        "fecha_visita": _parse_date(_clean_value(row.get("fecha_de_visita"))),
+        "hora_visita": _parse_time(_clean_value(row.get("horario_de_medicion"))),
+        "motivo_evaluacion": None,
+        "nombre_personal_visita": _clean_value(row.get("nombre_persona_empresa")),
+        "cargo_personal_visita": _clean_value(row.get("cargo_persona_empresa")),
+        "consultor_ist": _clean_value(row.get("nombre_profesional_ist")),
+        "note_visita": None,
+        "consultor_cargo": _clean_value(row.get("cargo_profesional_ist")),
+        "consultor_zonal": None,
+    }
+    return visita_data
+
+
+def cargar_archivo(ruta_excel: str) -> int:
+    xls = pd.ExcelFile(ruta_excel)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        visitas_ids: List[int] = []
+
+        if "Resultados" in xls.sheet_names and not set(xls.sheet_names).intersection(
+            {"visita", "visitas", "areas", "v_areas", "puntos", "v_puntos"}
+        ):
+            resultados_df = xls.parse("Resultados")
+            resultados_df = resultados_df.rename(columns=_normalize_column_name)
+
+            for _, row in resultados_df.iterrows():
+                visita_data = _parse_visita_row(row)
+                areas_df = _build_areas_from_wide_row(row)
+                puntos_df = pd.DataFrame()
+                visita_id = _process_visita(cursor, visita_data, areas_df, puntos_df)
+                visitas_ids.append(visita_id)
+        else:
+            visita_sheet = _first_available_sheet(xls, ["visita", "visitas"])
+            visita_df = xls.parse(visita_sheet)
+            visita_df = _apply_aliases(
+                visita_df,
+                {
+                    "cuv": "cuv_visita",
+                    "cuv_visita": "cuv_visita",
+                    "fecha": "fecha_visita",
+                    "fecha_visita": "fecha_visita",
+                    "hora": "hora_visita",
+                    "hora_visita": "hora_visita",
+                    "motivo": "motivo_evaluacion",
+                    "motivo_evaluacion": "motivo_evaluacion",
+                    "personal_visita": "nombre_personal_visita",
+                    "nombre_personal_visita": "nombre_personal_visita",
+                    "cargo": "cargo_personal_visita",
+                    "cargo_personal_visita": "cargo_personal_visita",
+                    "consultor": "consultor_ist",
+                    "consultor_ist": "consultor_ist",
+                    "nota": "note_visita",
+                    "note_visita": "note_visita",
+                    "consultor_cargo": "consultor_cargo",
+                    "consultor_zonal": "consultor_zonal",
+                },
+            )
+            if visita_df.empty:
+                raise ValueError("La hoja de visita está vacía")
+
+            visita_cols = [
+                "cuv_visita",
+                "fecha_visita",
+                "hora_visita",
+                "motivo_evaluacion",
+                "nombre_personal_visita",
+                "cargo_personal_visita",
+                "consultor_ist",
+                "note_visita",
+                "consultor_cargo",
+                "consultor_zonal",
+            ]
+            visita_data = _dict_from_row(visita_df.iloc[0], visita_cols)
+            visita_data["fecha_visita"] = _parse_date(visita_data["fecha_visita"])
+            visita_data["hora_visita"] = _parse_time(visita_data["hora_visita"])
+
+            areas_sheet = _first_available_sheet(xls, ["areas", "v_areas"])
+            areas_df = xls.parse(areas_sheet)
+            areas_df = _apply_aliases(
+                areas_df,
+                {
+                    "id": "area_id",
+                    "area_id": "area_id",
+                    "codigo": "codigo_area",
+                    "codigo_area": "codigo_area",
+                    "nombre": "nombre_area",
+                    "nombre_area": "nombre_area",
+                    "uso": "uso",
+                    "piso": "piso_nivel",
+                    "piso_nivel": "piso_nivel",
+                    "largo_m": "largo_m",
+                    "ancho_m": "ancho_m",
+                    "alto_m": "alto_m",
+                    "volumen_m3": "volumen_m3",
+                    "aforo": "aforo_permitido",
+                    "aforo_permitido": "aforo_permitido",
+                    "m3_persona": "m3_porpersona",
+                    "m3_porpersona": "m3_porpersona",
+                    "m3_porpersona_594": "m3_porpersona_594",
+                    "m3_porpersona_cumple": "m3_porpersona_cumple",
+                    "caudal_inyeccion_total": "caudal_inyeccion_total",
+                    "caudal_extraccion_total": "caudal_extraccion_total",
+                    "m3_porpersona_hora": "m3_porpersona_hora",
+                    "m3_porpersona_hora_594": "m3_porpersona_hora_594",
+                    "m3_porpersona_hora_cumple": "m3_porpersona_hora_cumple",
+                    "recambio_hora_594_min": "recambio_hora_594_min",
+                    "recambio_hora_594_max": "recambio_hora_594_max",
+                    "recambio_hora": "recambio_hora",
+                    "recambio_hora_cumple": "recambio_hora_cumple",
+                    "ocupacion_habitual": "ocupacion_habitual",
+                    "ventilacion_tipo": "ventilacion_tipo",
+                    "ventilacion_sistema": "ventilacion_sistema",
+                    "ventilacion_estado": "ventilacion_estado",
+                    "aberturas": "aberturas",
+                    "croquis_url": "croquis_url",
+                    "observaciones": "observaciones",
+                },
+            )
+
+            puntos_sheet = _first_available_sheet(xls, ["puntos", "v_puntos"])
+            puntos_df = xls.parse(puntos_sheet)
+            puntos_df = _apply_aliases(
+                puntos_df,
+                {
+                    "id": "punto_id",
+                    "punto_id": "punto_id",
+                    "area_id": "area_id",
+                    "codigo": "codigo_punto",
+                    "codigo_punto": "codigo_punto",
+                    "tipo": "tipo_punto",
+                    "tipo_punto": "tipo_punto",
+                    "ubicacion_detalle": "ubicacion_detalle",
+                    "altura_m": "altura_m",
+                    "distancia_fuente_m": "distancia_fuente_m",
+                    "conducto_largo_cm": "conducto_largo_cm",
+                    "conducto_ancho_cm": "conducto_ancho_cm",
+                    "conducto_diametro": "conducto_diametro",
+                    "seccion_conducto_cm2": "seccion_conducto_cm2",
+                    "medicion_caudal_1": "medicion_caudal_1",
+                    "medicion_caudal_2": "medicion_caudal_2",
+                    "medicion_caudal_3": "medicion_caudal_3",
+                    "medicion_caudal_4": "medicion_caudal_4",
+                    "medicion_caudal_5": "medicion_caudal_5",
+                    "medicion_caudal_p": "medicion_caudal_p",
+                    "caudal": "caudal",
+                    "fecha_hora": "fecha_hora",
+                    "condiciones_ocupacion": "condiciones_ocupacion",
+                    "puertas_ventanas_abiertas": "puertas_ventanas_abiertas",
+                    "temperatura_c": "temperatura_c",
+                    "humedad_relativa_pct": "humedad_relativa_pct",
+                    "croquis_url": "croquis_url",
+                    "observaciones": "observaciones",
+                },
+            )
+
+            visita_id = _process_visita(cursor, visita_data, areas_df, puntos_df)
+            visitas_ids.append(visita_id)
+
         conn.commit()
-        return visita_id
+        return visitas_ids[-1] if visitas_ids else 0
     except Exception:
         conn.rollback()
         raise
@@ -413,8 +480,17 @@ def cargar_archivo(ruta_excel: str) -> int:
 if __name__ == "__main__":
     import argparse
 
+    default_path = os.path.join(os.path.dirname(__file__), "pruebacarga.xlsx")
+
     parser = argparse.ArgumentParser(description="Carga evaluaciones de ventilación desde un Excel")
-    parser.add_argument("archivo", help="Ruta al archivo .xlsx a cargar")
+    parser.add_argument(
+        "archivo",
+        nargs="?",
+        default=default_path,
+        help=(
+            "Ruta al archivo .xlsx a cargar (por defecto se usa etl/3_carga/pruebacarga.xlsx)"
+        ),
+    )
     args = parser.parse_args()
 
     visita_id = cargar_archivo(args.archivo)
