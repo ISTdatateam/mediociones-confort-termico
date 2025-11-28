@@ -17,3 +17,4 @@ pythermalcomfort
 qrcode
 Pillow
 natsort
+openpyxl
