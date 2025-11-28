@@ -135,15 +135,24 @@ def check_session():
         #st.write(st.session_state["user_data"])
     return user_data
 
+logger = logging.getLogger(__name__)
+
+
 def get_ct(cuv):
     db = MySQLDatabaseManager()
     try:
+        try:
+            cuv_param = int(cuv)
+        except (TypeError, ValueError):
+            logger.error("CUV inválido: %s", cuv)
+            return []
+
         query = """
             SELECT cuv, rut, razon_social, rut2, nombre_ct, direccion_ct, comuna_ct, region_ct, region_num_ct
-            FROM centros_trabajo 
+            FROM centros_trabajo
             WHERE cuv = %s
         """
-        db.cursor.execute(query, (cuv,))
+        db.cursor.execute(query, (cuv_param,))
         resultados = db.cursor.fetchall()
         return resultados
     finally:
