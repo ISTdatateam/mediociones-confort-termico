@@ -105,13 +105,51 @@ def _insert_ev_ventilacion(cursor, visita_id: int, ventilacion_data: Dict):
 
     cursor.execute(
         """
-        INSERT INTO ev_ventilacion (visita_id, equipo_temp, equipo_vel_air)
-        VALUES (%s, %s, %s)
+        INSERT INTO ev_ventilacion (
+            visita_id,
+            equipo_temp,
+            equipo_vel_air,
+            instru_nombre_1,
+            instru_marca_1,
+            instru_modelo_1,
+            instru_nserie_1,
+            instru_ncertificado_1,
+            instru_nombre_2,
+            instru_marca_2,
+            instru_modelo_2,
+            instru_nserie_2,
+            instru_ncertificado_2
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
             equipo_temp = VALUES(equipo_temp),
-            equipo_vel_air = VALUES(equipo_vel_air)
+            equipo_vel_air = VALUES(equipo_vel_air),
+            instru_nombre_1 = VALUES(instru_nombre_1),
+            instru_marca_1 = VALUES(instru_marca_1),
+            instru_modelo_1 = VALUES(instru_modelo_1),
+            instru_nserie_1 = VALUES(instru_nserie_1),
+            instru_ncertificado_1 = VALUES(instru_ncertificado_1),
+            instru_nombre_2 = VALUES(instru_nombre_2),
+            instru_marca_2 = VALUES(instru_marca_2),
+            instru_modelo_2 = VALUES(instru_modelo_2),
+            instru_nserie_2 = VALUES(instru_nserie_2),
+            instru_ncertificado_2 = VALUES(instru_ncertificado_2)
         """,
-        (visita_id, equipo_temp, equipo_vel),
+        (
+            visita_id,
+            equipo_temp,
+            equipo_vel,
+            ventilacion_data.get("instru_nombre_1"),
+            ventilacion_data.get("instru_marca_1"),
+            ventilacion_data.get("instru_modelo_1"),
+            ventilacion_data.get("instru_nserie_1"),
+            ventilacion_data.get("instru_ncertificado_1"),
+            ventilacion_data.get("instru_nombre_2"),
+            ventilacion_data.get("instru_marca_2"),
+            ventilacion_data.get("instru_modelo_2"),
+            ventilacion_data.get("instru_nserie_2"),
+            ventilacion_data.get("instru_ncertificado_2"),
+        ),
     )
 
 
@@ -309,6 +347,16 @@ def _process_visita(cursor, visita_data: Dict, areas_df: pd.DataFrame, puntos_df
         {
             "equipo_temp": visita_data.get("equipo_temp"),
             "equipo_vel_air": visita_data.get("equipo_vel_air"),
+            "instru_nombre_1": visita_data.get("instru_nombre_1"),
+            "instru_marca_1": visita_data.get("instru_marca_1"),
+            "instru_modelo_1": visita_data.get("instru_modelo_1"),
+            "instru_nserie_1": visita_data.get("instru_nserie_1"),
+            "instru_ncertificado_1": visita_data.get("instru_ncertificado_1"),
+            "instru_nombre_2": visita_data.get("instru_nombre_2"),
+            "instru_marca_2": visita_data.get("instru_marca_2"),
+            "instru_modelo_2": visita_data.get("instru_modelo_2"),
+            "instru_nserie_2": visita_data.get("instru_nserie_2"),
+            "instru_ncertificado_2": visita_data.get("instru_ncertificado_2"),
         },
     )
 
@@ -431,6 +479,16 @@ def _parse_visita_row(row: pd.Series) -> Dict:
         "consultor_zonal": None,
         "equipo_temp": _clean_value(row.get("equipo_temp")),
         "equipo_vel_air": _clean_value(row.get("equipo_vel_air")),
+        "instru_nombre_1": _clean_value(row.get("instru_nombre_1")),
+        "instru_marca_1": _clean_value(row.get("instru_marca_1")),
+        "instru_modelo_1": _clean_value(row.get("instru_modelo_1")),
+        "instru_nserie_1": _clean_value(row.get("instru_nserie_1")),
+        "instru_ncertificado_1": _clean_value(row.get("instru_ncertificado_1")),
+        "instru_nombre_2": _clean_value(row.get("instru_nombre_2")),
+        "instru_marca_2": _clean_value(row.get("instru_marca_2")),
+        "instru_modelo_2": _clean_value(row.get("instru_modelo_2")),
+        "instru_nserie_2": _clean_value(row.get("instru_nserie_2")),
+        "instru_ncertificado_2": _clean_value(row.get("instru_ncertificado_2")),
     }
     return visita_data
 
@@ -484,6 +542,16 @@ def cargar_archivo(ruta_excel: str) -> int:
                     "equipo_vel_air": "equipo_vel_air",
                     "equipo_velocidad": "equipo_vel_air",
                     "equipo_ventilacion": "equipo_vel_air",
+                    "instru_nombre_1": "instru_nombre_1",
+                    "instru_marca_1": "instru_marca_1",
+                    "instru_modelo_1": "instru_modelo_1",
+                    "instru_nserie_1": "instru_nserie_1",
+                    "instru_ncertificado_1": "instru_ncertificado_1",
+                    "instru_nombre_2": "instru_nombre_2",
+                    "instru_marca_2": "instru_marca_2",
+                    "instru_modelo_2": "instru_modelo_2",
+                    "instru_nserie_2": "instru_nserie_2",
+                    "instru_ncertificado_2": "instru_ncertificado_2",
                 },
             )
             if visita_df.empty:
@@ -502,6 +570,16 @@ def cargar_archivo(ruta_excel: str) -> int:
                 "consultor_zonal",
                 "equipo_temp",
                 "equipo_vel_air",
+                "instru_nombre_1",
+                "instru_marca_1",
+                "instru_modelo_1",
+                "instru_nserie_1",
+                "instru_ncertificado_1",
+                "instru_nombre_2",
+                "instru_marca_2",
+                "instru_modelo_2",
+                "instru_nserie_2",
+                "instru_ncertificado_2",
             ]
             visita_data = _dict_from_row(visita_df.iloc[0], visita_cols)
             visita_data["fecha_visita"] = _parse_date(visita_data["fecha_visita"])
