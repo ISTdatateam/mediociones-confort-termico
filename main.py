@@ -47,6 +47,7 @@ from utils.helpers import (
     obtener_puntos_ventilacion_por_visita,
     insertar_punto_ventilacion,
     recalcular_totales_area_ventilacion,
+    guardar_equipos_ventilacion,
 )
 
 try:
@@ -433,6 +434,8 @@ def reset_visita_context():
 
     st.session_state["cod_equipo_t"] = "Seleccione..."
     st.session_state["cod_equipo_v"] = "Seleccione..."
+    st.session_state["vent_equipo_temp"] = "Seleccione..."
+    st.session_state["vent_equipo_vel"] = "Seleccione..."
 
 
 def preparar_nueva_visita():
@@ -509,8 +512,19 @@ def cargar_visita_existente(id_visita):
         else:
             st.session_state.pop("cierre", None)
     else:
+        equipo_temp_vent = get_equipo_dicc_por_id(visita.get("evv_equipo_temp")) or "Seleccione..."
+        equipo_vel_vent = get_equipo_dicc_por_id(visita.get("evv_equipo_vel_air")) or "Seleccione..."
+
         st.session_state["cod_equipo_t"] = "Seleccione..."
         st.session_state["cod_equipo_v"] = "Seleccione..."
+        st.session_state["vent_equipo_temp"] = equipo_temp_vent
+        st.session_state["vent_equipo_vel"] = equipo_vel_vent
+        st.session_state["visita_prefill"].update(
+            {
+                "evv_equipo_temp": equipo_temp_vent,
+                "evv_equipo_vel_air": equipo_vel_vent,
+            }
+        )
         st.session_state["mostrar_caja_verificacion"] = False
         comentario_final = visita.get("note_visita")
         st.session_state["cierre_prefill"] = {"note_visita": comentario_final or ""}
@@ -607,6 +621,69 @@ def show_login():
             st.rerun()
         else:
             st.error("Usuario o contraseña incorrectos.")
+
+
+def mostrar_equipos_ventilacion():
+    st.subheader("Equipos utilizados en ventilación")
+
+    id_visita = st.session_state.get("id_visita")
+    if not id_visita:
+        st.info("Guarda primero los datos generales de la visita para asociar equipos.")
+        return
+
+    opciones_temp = ["Seleccione..."] + get_equipo_temp()
+    opciones_vel = ["Seleccione..."] + get_equipo_vel()
+
+    equipo_temp = st.session_state.get("vent_equipo_temp", "Seleccione...")
+    equipo_vel = st.session_state.get("vent_equipo_vel", "Seleccione...")
+
+    if equipo_temp not in opciones_temp:
+        equipo_temp = "Seleccione..."
+    if equipo_vel not in opciones_vel:
+        equipo_vel = "Seleccione..."
+
+    idx_temp = opciones_temp.index(equipo_temp)
+    idx_vel = opciones_vel.index(equipo_vel)
+
+    with st.form("form_equipos_ventilacion"):
+        equipo_temp = st.selectbox(
+            "Equipo termohigrómetro (opcional)",
+            options=opciones_temp,
+            index=idx_temp,
+        )
+        equipo_vel = st.selectbox(
+            "Equipo de velocidad de aire",
+            options=opciones_vel,
+            index=idx_vel,
+        )
+
+        submit_equipos = st.form_submit_button(
+            label="Guardar equipos de ventilación",
+            type="primary",
+            width='stretch',
+            icon=":material/check_circle:",
+        )
+
+    if submit_equipos:
+        equipo_temp = equipo_temp or "Seleccione..."
+        equipo_vel = equipo_vel or "Seleccione..."
+
+        datos_vent = {
+            "equipo_temp": None if equipo_temp == "Seleccione..." else equipo_temp,
+            "equipo_vel_air": None if equipo_vel == "Seleccione..." else equipo_vel,
+        }
+
+        if all(valor is None for valor in datos_vent.values()):
+            st.error("Selecciona al menos un equipo para guardar la información de ventilación.")
+            return
+
+        guardado = guardar_equipos_ventilacion(id_visita, datos_vent)
+        if guardado:
+            st.session_state["vent_equipo_temp"] = datos_vent.get("equipo_temp") or "Seleccione..."
+            st.session_state["vent_equipo_vel"] = datos_vent.get("equipo_vel_air") or "Seleccione..."
+            st.success("Equipos de ventilación guardados correctamente.")
+        else:
+            st.error("No se pudieron guardar los equipos de ventilación. Intenta nuevamente.")
 
 
 def mostrar_formularios_ventilacion():
@@ -1220,6 +1297,10 @@ def main():
         st.session_state["cod_equipo_t"] = "Seleccione..."
     if "cod_equipo_v" not in st.session_state:
         st.session_state["cod_equipo_v"] = "Seleccione..."
+    if "vent_equipo_temp" not in st.session_state:
+        st.session_state["vent_equipo_temp"] = "Seleccione..."
+    if "vent_equipo_vel" not in st.session_state:
+        st.session_state["vent_equipo_vel"] = "Seleccione..."
     if "visita_prefill" not in st.session_state:
         st.session_state["visita_prefill"] = {}
     if "cierre_prefill" not in st.session_state:
@@ -1662,6 +1743,8 @@ def main():
         # 3. Formulario 2: Mediciones de Áreas (Formularios Independientes)
         tipo_actual = st.session_state.get("visita_prefill", {}).get("tipo_evaluacion", "confort")
         if tipo_actual != "confort":
+            mostrar_equipos_ventilacion()
+            st.markdown("---")
             mostrar_formularios_ventilacion()
             return
 

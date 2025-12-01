@@ -86,6 +86,41 @@ def _with_defaults(area: Dict) -> Dict:
     return area
 
 
+def _resolve_equipo_id(cursor, equipo_valor: Optional[str]) -> Optional[str]:
+    codigo = _clean_value(equipo_valor)
+    if not codigo:
+        return None
+
+    cursor.execute(
+        "SELECT id_equipo FROM equipos_medicion WHERE id_equipo = %s OR equipo_dicc = %s",
+        (codigo, codigo),
+    )
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def _insert_ev_ventilacion(cursor, visita_id: int, ventilacion_data: Dict):
+    if not ventilacion_data:
+        return
+
+    equipo_temp = _resolve_equipo_id(cursor, ventilacion_data.get("equipo_temp"))
+    equipo_vel = _resolve_equipo_id(cursor, ventilacion_data.get("equipo_vel_air"))
+
+    if equipo_temp is None and equipo_vel is None:
+        return
+
+    cursor.execute(
+        """
+        INSERT INTO ev_ventilacion (visita_id, equipo_temp, equipo_vel_air)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            equipo_temp = VALUES(equipo_temp),
+            equipo_vel_air = VALUES(equipo_vel_air)
+        """,
+        (visita_id, equipo_temp, equipo_vel),
+    )
+
+
 def _compute_area_calculations(area: Dict, puntos_df: pd.DataFrame) -> Dict:
     area = _with_defaults(area)
 
@@ -274,6 +309,15 @@ def _insert_punto(cursor, punto: Dict):
 def _process_visita(cursor, visita_data: Dict, areas_df: pd.DataFrame, puntos_df: pd.DataFrame) -> int:
     visita_id = _insert_visita(cursor, visita_data)
 
+    _insert_ev_ventilacion(
+        cursor,
+        visita_id,
+        {
+            "equipo_temp": visita_data.get("equipo_temp"),
+            "equipo_vel_air": visita_data.get("equipo_vel_air"),
+        },
+    )
+
     area_cols = [
         "area_id",
         "codigo_area",
@@ -391,6 +435,8 @@ def _parse_visita_row(row: pd.Series) -> Dict:
         "note_visita": None,
         "consultor_cargo": _clean_value(row.get("cargo_profesional_ist")),
         "consultor_zonal": None,
+        "equipo_temp": _clean_value(row.get("equipo_temp")),
+        "equipo_vel_air": _clean_value(row.get("equipo_vel_air")),
     }
     return visita_data
 
@@ -440,6 +486,10 @@ def cargar_archivo(ruta_excel: str) -> int:
                     "note_visita": "note_visita",
                     "consultor_cargo": "consultor_cargo",
                     "consultor_zonal": "consultor_zonal",
+                    "equipo_temp": "equipo_temp",
+                    "equipo_vel_air": "equipo_vel_air",
+                    "equipo_velocidad": "equipo_vel_air",
+                    "equipo_ventilacion": "equipo_vel_air",
                 },
             )
             if visita_df.empty:
@@ -456,6 +506,8 @@ def cargar_archivo(ruta_excel: str) -> int:
                 "note_visita",
                 "consultor_cargo",
                 "consultor_zonal",
+                "equipo_temp",
+                "equipo_vel_air",
             ]
             visita_data = _dict_from_row(visita_df.iloc[0], visita_cols)
             visita_data["fecha_visita"] = _parse_date(visita_data["fecha_visita"])

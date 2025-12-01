@@ -178,10 +178,13 @@ def get_visita(id_visita):
                 ec.ver_tg_ini,
                 ec.ver_tbs_fin,
                 ec.ver_tbh_fin,
-                ec.ver_tg_fin
+                ec.ver_tg_fin,
+                evv.equipo_temp AS evv_equipo_temp,
+                evv.equipo_vel_air AS evv_equipo_vel_air
             FROM visitas v
             JOIN usuarios u ON v.consultor_ist = u.email
             LEFT JOIN ev_confort ec ON ec.visita_id = v.id_visita
+            LEFT JOIN ev_ventilacion evv ON evv.visita_id = v.id_visita
             WHERE v.id_visita = %s
             """
         db.cursor.execute(query, (id_visita,))
@@ -343,7 +346,37 @@ def _obtener_id_equipo_por_dicc(db, equipo_dicc):
     return row['id_equipo'] if row else None
 
 
-def guardar_visita_inicio(visita_data, confort_data=None):
+def _upsert_ev_ventilacion(db, visita_id, ventilacion_data):
+    """Inserta o actualiza los equipos de una evaluación de ventilación."""
+
+    if not ventilacion_data:
+        return
+
+    equipo_temp_id = _obtener_id_equipo_por_dicc(db, ventilacion_data.get("equipo_temp"))
+    equipo_vel_id = _obtener_id_equipo_por_dicc(db, ventilacion_data.get("equipo_vel_air"))
+
+    if equipo_temp_id is None and equipo_vel_id is None:
+        logging.warning(
+            "No se proporcionaron equipos válidos para la evaluación de ventilación %s",
+            visita_id,
+        )
+        return
+
+    query_ventilacion = """
+        INSERT INTO ev_ventilacion (
+            visita_id,
+            equipo_temp,
+            equipo_vel_air
+        ) VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            equipo_temp = VALUES(equipo_temp),
+            equipo_vel_air = VALUES(equipo_vel_air)
+    """
+
+    db.cursor.execute(query_ventilacion, (visita_id, equipo_temp_id, equipo_vel_id))
+
+
+def guardar_visita_inicio(visita_data, confort_data=None, ventilacion_data=None):
     """Inserta una visita y, de ser necesario, su información de confort térmico."""
     db = MySQLDatabaseManager()
     try:
@@ -436,6 +469,8 @@ def guardar_visita_inicio(visita_data, confort_data=None):
             )
 
             db.cursor.execute(query_confort, params_confort)
+        elif tipo_evaluacion == "ventilacion" and ventilacion_data:
+            _upsert_ev_ventilacion(db, id_visita, ventilacion_data)
 
         db.connection.commit()
         return id_visita
@@ -449,7 +484,7 @@ def guardar_visita_inicio(visita_data, confort_data=None):
         db.close()
 
 
-def actualizar_visita_inicio(id_visita, visita_data, confort_data=None):
+def actualizar_visita_inicio(id_visita, visita_data, confort_data=None, ventilacion_data=None):
     """Actualiza la información base de una visita y sus datos de confort."""
     db = MySQLDatabaseManager()
     try:
@@ -568,8 +603,14 @@ def actualizar_visita_inicio(id_visita, visita_data, confort_data=None):
                 )
 
                 db.cursor.execute(query_insert, params_insert)
+            db.cursor.execute("DELETE FROM ev_ventilacion WHERE visita_id = %s", (id_visita,))
+        elif tipo_evaluacion == "ventilacion":
+            if ventilacion_data:
+                _upsert_ev_ventilacion(db, id_visita, ventilacion_data)
+            db.cursor.execute("DELETE FROM ev_confort WHERE visita_id = %s", (id_visita,))
         else:
             db.cursor.execute("DELETE FROM ev_confort WHERE visita_id = %s", (id_visita,))
+            db.cursor.execute("DELETE FROM ev_ventilacion WHERE visita_id = %s", (id_visita,))
 
         db.connection.commit()
         return True
@@ -640,6 +681,23 @@ def guardar_visita_cierre(id_visita, dato_cierre, tipo_evaluacion):
         return True
     except Exception as e:
         logging.error("Error al actualizar el cierre de la visita: %s", e)
+        if db.connection:
+            db.connection.rollback()
+        return False
+    finally:
+        db.close()
+
+
+def guardar_equipos_ventilacion(visita_id, ventilacion_data):
+    """Guarda los equipos asociados a una visita de ventilación."""
+
+    db = MySQLDatabaseManager()
+    try:
+        _upsert_ev_ventilacion(db, visita_id, ventilacion_data or {})
+        db.connection.commit()
+        return True
+    except Exception as e:
+        logging.error("Error al guardar equipos de ventilación: %s", e)
         if db.connection:
             db.connection.rollback()
         return False
