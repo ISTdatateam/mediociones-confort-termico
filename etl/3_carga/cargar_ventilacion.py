@@ -86,7 +86,75 @@ def _with_defaults(area: Dict) -> Dict:
     return area
 
 
-def _resolve_equipo_id(cursor, equipo_valor: Optional[str]) -> Optional[str]:
+def _create_equipo_medicion(cursor, equipo_id: str, ventilacion_data: Dict) -> str:
+    nombre_equipo = _clean_value(ventilacion_data.get("instru_nombre_1")) or equipo_id
+    marca_equipo = _clean_value(ventilacion_data.get("instru_marca_1"))
+    modelo_equipo = _clean_value(ventilacion_data.get("instru_modelo_1")) or equipo_id
+    n_serie_equipo = _clean_value(ventilacion_data.get("instru_nserie_1"))
+    num_certificado = _clean_value(ventilacion_data.get("instru_ncertificado_1"))
+
+    cursor.execute(
+        """
+        INSERT INTO equipos_medicion (
+            id_equipo,
+            nombre_equipo,
+            cod_equipo,
+            n_serie_equipo,
+            marca_equipo,
+            modelo_equipo,
+            estado_equipo,
+            obs_equipo,
+            estado_calibracion,
+            fecha_calibracion,
+            prox_calibracion,
+            empresa_certificadora,
+            num_certificado,
+            fecha_ingreso,
+            observaciones,
+            simple_cod,
+            url_certificado,
+            equipo_dicc,
+            tipo,
+            patron_tbs,
+            patron_tbh,
+            patron_tg
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        """,
+        (
+            equipo_id,
+            nombre_equipo,
+            None,
+            n_serie_equipo,
+            marca_equipo,
+            modelo_equipo,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            num_certificado,
+            None,
+            None,
+            None,
+            None,
+            None,
+            "instrumento",
+            0.0,
+            0.0,
+            0.0,
+        ),
+    )
+
+    return equipo_id
+
+
+def _resolve_equipo_id(
+    cursor, equipo_valor: Optional[str], ventilacion_data: Optional[Dict] = None
+) -> Optional[str]:
     codigo = _clean_value(equipo_valor)
     if not codigo:
         return None
@@ -96,14 +164,20 @@ def _resolve_equipo_id(cursor, equipo_valor: Optional[str]) -> Optional[str]:
         (codigo, codigo),
     )
     row = cursor.fetchone()
-    return row[0] if row else None
+    if row:
+        return row[0]
+
+    if ventilacion_data is None:
+        return None
+
+    return _create_equipo_medicion(cursor, codigo, ventilacion_data)
 
 
 def _insert_ev_ventilacion(cursor, visita_id: int, ventilacion_data: Dict):
     equipo_temp = _resolve_equipo_id(cursor, ventilacion_data.get("equipo_temp"))
 
-    equipo_vel_valor = ventilacion_data.get("instru_modelo_1")
-    equipo_vel = _resolve_equipo_id(cursor, equipo_vel_valor)
+    equipo_vel_valor = ventilacion_data.get("instru_nserie_1") or ventilacion_data.get("instru_modelo_1")
+    equipo_vel = _resolve_equipo_id(cursor, equipo_vel_valor, ventilacion_data)
 
     cursor.execute(
         """
