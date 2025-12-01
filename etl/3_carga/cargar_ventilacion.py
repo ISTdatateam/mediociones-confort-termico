@@ -100,14 +100,8 @@ def _resolve_equipo_id(cursor, equipo_valor: Optional[str]) -> Optional[str]:
 
 
 def _insert_ev_ventilacion(cursor, visita_id: int, ventilacion_data: Dict):
-    if not ventilacion_data:
-        return
-
     equipo_temp = _resolve_equipo_id(cursor, ventilacion_data.get("equipo_temp"))
     equipo_vel = _resolve_equipo_id(cursor, ventilacion_data.get("equipo_vel_air"))
-
-    if equipo_temp is None and equipo_vel is None:
-        return
 
     cursor.execute(
         """
