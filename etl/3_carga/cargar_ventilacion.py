@@ -102,9 +102,7 @@ def _resolve_equipo_id(cursor, equipo_valor: Optional[str]) -> Optional[str]:
 def _insert_ev_ventilacion(cursor, visita_id: int, ventilacion_data: Dict):
     equipo_temp = _resolve_equipo_id(cursor, ventilacion_data.get("equipo_temp"))
 
-    equipo_vel_valor = ventilacion_data.get("instru_modelo_1") or ventilacion_data.get(
-        "equipo_vel_air"
-    )
+    equipo_vel_valor = ventilacion_data.get("instru_modelo_1")
     equipo_vel = _resolve_equipo_id(cursor, equipo_vel_valor)
 
     cursor.execute(
