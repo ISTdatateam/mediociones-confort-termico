@@ -255,10 +255,14 @@ def _agregar_anexo_equipos(
     # última para los informes de ventilación.
     for key in ("evv_equipo_temp", "evv_equipo_vel_air", "equipo_temp", "equipo_vel_air"):
         valor = str(row_visita.get(key, "")).strip()
+        print("INSTRUMENTO", valor)
         if valor:
             codigos_en_uso.append(valor)
+            print("INSTRUMENTOS", codigos_en_uso)
+
 
     df_equipos = df_equipos.copy()
+    print("EQUIPOS", df_equipos)
     if not df_equipos.empty and "id_equipo" in df_equipos.columns:
         df_equipos["id_equipo"] = df_equipos["id_equipo"].astype(str)
 
@@ -278,6 +282,44 @@ def _agregar_anexo_equipos(
     }
 
     if df_equipos_filtrado.empty:
+        instrumentos_manuales = []
+        for indice in ("1", "2"):
+            instrumento = {
+                "nombre_equipo": row_visita.get(f"instru_nombre_{indice}", ""),
+                "marca_equipo": row_visita.get(f"instru_marca_{indice}", ""),
+                "modelo_equipo": row_visita.get(f"instru_modelo_{indice}", ""),
+                "n_serie_equipo": row_visita.get(f"instru_nserie_{indice}", ""),
+                "num_certificado": row_visita.get(f"instru_ncertificado_{indice}", ""),
+            }
+
+            if any(str(valor).strip() for valor in instrumento.values()):
+                instrumentos_manuales.append(instrumento)
+
+        if instrumentos_manuales:
+            field_mapping_manual = {
+                "nombre_equipo": "Instrumento",
+                "marca_equipo": "Marca",
+                "modelo_equipo": "Modelo",
+                "n_serie_equipo": "Número de serie",
+                "num_certificado": "Número de certificado",
+            }
+
+            for instrumento in instrumentos_manuales:
+                tabla_equipo = doc.add_table(rows=len(field_mapping_manual), cols=2)
+                tabla_equipo.style = "Table Grid"
+                for row_num, (key, display_name) in enumerate(
+                    field_mapping_manual.items()
+                ):
+                    tabla_equipo.rows[row_num].cells[0].text = display_name
+                    tabla_equipo.rows[row_num].cells[1].text = str(
+                        instrumento.get(key, "")
+                    )
+
+                set_column_width(tabla_equipo, 0, Cm(3.5))
+                set_column_width(tabla_equipo, 1, Cm(13.5))
+                doc.add_paragraph("")
+            return
+
         doc.add_paragraph(
             "No se encontró información de equipos de medición relacionados con la visita."
         )
