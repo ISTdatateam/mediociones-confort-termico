@@ -365,10 +365,10 @@ def _agregar_anexo_equipos(
 
                 for img_path in imagenes:
                     doc.add_picture(img_path, width=Cm(17))
-            else:
-                doc.add_paragraph(
-                    f"No se encontraron imágenes para el equipo {id_equipo}"
-                )
+            #else:
+                #doc.add_paragraph(
+                #    f"No se encontraron imágenes para el equipo {id_equipo}"
+                #)
         except Exception as exc:
             doc.add_paragraph(
                 f"Error al cargar imágenes para equipo {id_equipo}: {exc}"
@@ -1557,7 +1557,7 @@ def generar_informe_ventilacion_en_word(
     if cumplen_m3 and not otros_indicadores_medidos:
         # Caso que describes: solo m³/persona y todo CUMPLE → no corresponde mencionar m³/persona·h ni recambios
         doc.add_paragraph(
-            f"Acorde a los resultados alcanzados, las áreas evaluadas {', '.join('nombre_area')} “Cumplen” con lo establecido en el Decreto Supremo "
+            f"Acorde a los resultados alcanzados, las áreas evaluadas {', '.join('cumplen_m3')} “Cumplen” con lo establecido en el Decreto Supremo "
             "N° 594/99 del MINSAL respecto del volumen mínimo de aire disponible por persona (10 m³ por persona). Por lo "
             "anterior, se deberán seguir las indicaciones propuestas con el fin de mantener y/o fortalecer las condiciones "
             "de ventilación evaluadas."
