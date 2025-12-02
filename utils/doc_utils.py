@@ -248,10 +248,15 @@ def _agregar_anexo_equipos(
 
     row_visita = df_visitas.iloc[0]
 
-    codigos_en_uso = [
-        str(row_visita.get("equipo_temp", "")).strip(),
-        str(row_visita.get("equipo_vel_air", "")).strip(),
-    ]
+    codigos_en_uso = []
+
+    # Los equipos pueden estar registrados en la evaluación de confort o en la
+    # tabla específica de ventilación (ev_ventilacion). Se prioriza esta
+    # última para los informes de ventilación.
+    for key in ("evv_equipo_temp", "evv_equipo_vel_air", "equipo_temp", "equipo_vel_air"):
+        valor = str(row_visita.get(key, "")).strip()
+        if valor:
+            codigos_en_uso.append(valor)
 
     df_equipos = df_equipos.copy()
     if not df_equipos.empty and "id_equipo" in df_equipos.columns:
