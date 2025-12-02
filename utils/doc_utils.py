@@ -1423,12 +1423,6 @@ def generar_informe_ventilacion_en_word(
 
     doc.add_paragraph()
 
-    total_areas = len(df_areas)
-    total_puntos = len(df_puntos)
-    areas_m3_no = []
-    areas_m3_h_no = []
-    areas_recambio_no = []
-
     if not df_puntos.empty:
         doc.add_heading("3.2 Puntos de medición", level=3)
 
@@ -1524,11 +1518,13 @@ def generar_informe_ventilacion_en_word(
     areas_m3_h_no = []
     areas_recambio_no = []
     areas_no_cumplen = []
+    mostrar_anexo_equipos = True
 
     if not df_areas.empty and 'nombre_area' in df_areas.columns:
         if 'm3_porpersona_cumple' in df_areas.columns:
             areas_m3_no = df_areas.loc[df_areas['m3_porpersona_cumple'] == 0, 'nombre_area'].tolist()
             areas_m3_si = df_areas.loc[df_areas['m3_porpersona_cumple'] == 1, 'nombre_area'].tolist()
+            mostrar_anexo_equipos = len(areas_m3_no) > 0
         if 'm3_porpersona_hora_cumple' in df_areas.columns and (not df_puntos.empty):
             areas_m3_h_no = df_areas.loc[df_areas['m3_porpersona_hora_cumple'] == 0, 'nombre_area'].tolist()
         else:
@@ -1556,12 +1552,12 @@ def generar_informe_ventilacion_en_word(
 
     cumplen_m3 = todas_cumplen_m3(df_areas)
     areas_cumplen_texto = ', '.join(areas_m3_si) if areas_m3_si else 'evaluadas'
-
+    print(areas_cumplen_texto)
 
     if cumplen_m3 and not otros_indicadores_medidos:
         # Caso que describes: solo m³/persona y todo CUMPLE → no corresponde mencionar m³/persona·h ni recambios
         doc.add_paragraph(
-            f"Acorde a los resultados alcanzados, las áreas {areas_cumplen_texto} “Cumplen” con lo establecido en el Decreto Supremo "
+            f"Acorde a los resultados alcanzados, las áreas: {areas_cumplen_texto} “Cumplen” con lo establecido en el Decreto Supremo "
             "N° 594/99 del MINSAL respecto del volumen mínimo de aire disponible por persona (10 m³ por persona). Por lo "
             "anterior, se deberán seguir las indicaciones propuestas con el fin de mantener y/o fortalecer las condiciones "
             "de ventilación evaluadas."
@@ -1741,9 +1737,10 @@ def generar_informe_ventilacion_en_word(
     doc.add_page_break()
     _agregar_seccion_anexos(doc, anexos_info_vent)
 
-    doc.add_paragraph()
-    doc.add_heading("Anexo 2. Instrumentos de medición utilizados", level=2)
-    _agregar_anexo_equipos(doc, df_visitas, df_equipos)
+    if mostrar_anexo_equipos:
+        doc.add_paragraph()
+        doc.add_heading("Anexo 2. Instrumentos de medición utilizados", level=2)
+        _agregar_anexo_equipos(doc, df_visitas, df_equipos)
 
     buffer = BytesIO()
     doc.save(buffer)
