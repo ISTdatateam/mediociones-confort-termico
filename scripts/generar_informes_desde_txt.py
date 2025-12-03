@@ -107,6 +107,67 @@ def _generar_informe_ventilacion(
 
     df_equipos = get_equipos()
 
+    cumple_series = pd.to_numeric(
+        df_areas.get("m3_porpersona_cumple"), errors="coerce"
+    ).fillna(0)
+    areas_requieren_puntos = df_areas.loc[cumple_series.astype(int) == 0]
+
+    if not areas_requieren_puntos.empty:
+        if df_puntos.empty:
+            nombres_requeridos = areas_requieren_puntos.get(
+                "nombre_area", pd.Series(dtype=str)
+            )
+            nombres = ", ".join(nombre for nombre in nombres_requeridos if nombre)
+            if not nombres:
+                nombres = ", ".join(
+                    areas_requieren_puntos.get(
+                        "codigo_area", pd.Series(dtype=str)
+                    ).astype(str)
+                )
+            logging.error(
+                "Registra puntos de medición para las áreas que no cumplen el "
+                "indicador de m³/persona%s",
+                f": {nombres}." if nombres else ".",
+            )
+            return None
+
+        if "area_id" in df_puntos.columns:
+            puntos_por_area = df_puntos.groupby("area_id").size()
+        else:
+            puntos_por_area = pd.Series(dtype=int)
+
+        areas_sin_puntos = [
+            area_id
+            for area_id in areas_requieren_puntos.get(
+                "area_id", pd.Series(dtype=int)
+            ).tolist()
+            if puntos_por_area.get(area_id, 0) == 0
+        ]
+
+        if areas_sin_puntos:
+            nombres_faltantes = []
+            for area_id in areas_sin_puntos:
+                area_fila = areas_requieren_puntos[
+                    areas_requieren_puntos["area_id"] == area_id
+                ]
+                nombre = area_fila.get("nombre_area")
+                if nombre is not None and not nombre.empty:
+                    nombres_faltantes.append(str(nombre.iloc[0]))
+                else:
+                    codigo = area_fila.get("codigo_area")
+                    if codigo is not None and not codigo.empty:
+                        nombres_faltantes.append(str(codigo.iloc[0]))
+                    else:
+                        nombres_faltantes.append(str(area_id))
+
+            lista_nombres = ", ".join(nombres_faltantes)
+            logging.error(
+                "Faltan puntos de medición para completar las áreas sin "
+                "cumplimiento: %s.",
+                lista_nombres,
+            )
+            return None
+
     doc_bytes = generar_informe_ventilacion_en_word(
         df_centro, df_visita, df_areas, df_puntos, df_equipos
     )
