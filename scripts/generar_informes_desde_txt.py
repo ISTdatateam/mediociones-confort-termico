@@ -31,6 +31,26 @@ from utils.helpers import (
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
+def _normalizar_tipo(valor: str) -> str:
+    """Normaliza el tipo de informe eliminando acentos y espacios extra."""
+
+    traducciones = str.maketrans(
+        {
+            "á": "a",
+            "é": "e",
+            "í": "i",
+            "ó": "o",
+            "ú": "u",
+            "Á": "a",
+            "É": "e",
+            "Í": "i",
+            "Ó": "o",
+            "Ú": "u",
+        }
+    )
+    return valor.strip().translate(traducciones).lower()
+
+
 def _leer_ids_desde_txt(ruta_txt: Path) -> List[int]:
     ids: List[int] = []
     with ruta_txt.open("r", encoding="utf-8") as archivo:
@@ -196,6 +216,8 @@ def _generar_informe(
         logging.error("No se encontró la visita con ID %s", id_visita)
         return None
 
+    tipo_lower = _normalizar_tipo(tipo)
+
     cuv = df_visita.iloc[0].get("cuv_visita")
     if pd.isna(cuv):
         logging.error("La visita %s no tiene CUV asociado", id_visita)
@@ -206,8 +228,9 @@ def _generar_informe(
         logging.error("No se encontró el centro de trabajo para CUV %s", cuv)
         return None
 
-    tipo_lower = tipo.lower()
-    tipo_evaluacion_visita = str(df_visita.iloc[0].get("tipo_evaluacion", "")).lower()
+    tipo_evaluacion_visita = _normalizar_tipo(
+        str(df_visita.iloc[0].get("tipo_evaluacion", ""))
+    )
     if tipo_lower == "auto":
         tipo_lower = tipo_evaluacion_visita or "confort"
     elif tipo_evaluacion_visita and tipo_lower != tipo_evaluacion_visita:
@@ -262,6 +285,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--tipo",
+        type=_normalizar_tipo,
         choices=["confort", "ventilacion", "auto"],
         default="auto",
         help=(
