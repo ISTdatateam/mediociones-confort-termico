@@ -1178,7 +1178,7 @@ def generar_informe_ventilacion_en_word(
     df_puntos = df_puntos.copy()
     df_equipos = df_equipos.copy()
 
-    format_columns(df_visitas, ["nombre_personal_visita", "consultor_ist", "consultor_cargo", "consultor_zonal"], mode="title")
+    format_columns(df_visitas, ["nombre_personal_visita", "consultor_ist", "consultor_zonal"], mode="title")
     if not df_areas.empty:
         format_columns(df_areas, ["nombre_area", "uso", "ventilacion_tipo", "ventilacion_estado"], mode="title")
 
@@ -1700,7 +1700,7 @@ def generar_informe_ventilacion_en_word(
     # Agregar párrafo para la profesión, centrado
     p_profesion = doc.add_paragraph()
     p_profesion.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run_profesion = p_profesion.add_run(consultor_cargo)
+    run_profesion =p_profesion.add_run (consultor_cargo)
 
     # Agregar párrafo para el zonal, centrado
     p_zonal = doc.add_paragraph()
