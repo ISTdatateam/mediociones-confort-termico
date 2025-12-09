@@ -1252,7 +1252,7 @@ def generar_informe_ventilacion_en_word(
                 ("Cargo de la persona que acompaña la visita", row_visita.get('cargo_personal_visita', '')),
                 ("Tipo de evaluación", row_visita.get('tipo_evaluacion', '').lower().title()),
                 ("Fecha emisión informe", "[COMPLETAR]"),
-                ("Revisor del informe", "[COMPLETAR]"),
+                ("Revisor del informe", "Rodrigo Novoa Miranda"),
                 ("Destinatario informe", "[COMPLETAR]"),
             ],
         )
@@ -1557,7 +1557,7 @@ def generar_informe_ventilacion_en_word(
     if cumplen_m3 and not otros_indicadores_medidos:
         # Caso que describes: solo m³/persona y todo CUMPLE → no corresponde mencionar m³/persona·h ni recambios
         doc.add_paragraph(
-            f"Acorde a los resultados alcanzados, las áreas: {areas_cumplen_texto} “Cumplen” con lo establecido en el Decreto Supremo "
+            f"Acorde a los resultados alcanzados, las áreas: {areas_cumplen_texto} cumplen con lo establecido en el Decreto Supremo "
             "N° 594/99 del MINSAL respecto del volumen mínimo de aire disponible por persona (10 m³ por persona). Por lo "
             "anterior, se deberán seguir las indicaciones propuestas con el fin de mantener y/o fortalecer las condiciones "
             "de ventilación evaluadas."
@@ -1678,6 +1678,8 @@ def generar_informe_ventilacion_en_word(
     )
 
     firma_path = os.path.join("imagenes-firma", consultor_ist_limpio + ".png")
+    print (firma_path)
+
 
     try:
         paragraph = doc.add_paragraph()
