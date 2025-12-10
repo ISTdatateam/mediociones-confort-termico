@@ -56,6 +56,28 @@ def _clean_value(value):
     return value
 
 
+def _get_consultor_data(cursor, consultor_email: Optional[str]) -> Optional[Dict[str, Optional[str]]]:
+    if not consultor_email:
+        return None
+
+    cursor.execute(
+        "SELECT email, name, cargo, zonal, name_complete FROM usuarios WHERE email = %s",
+        (consultor_email,),
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "email": row[0],
+        "name": row[1],
+        "cargo": row[2],
+        "zonal": row[3],
+        "name_complete": row[4],
+    }
+
+
 def _to_float(value):
     if value is None or pd.isna(value):
         return None
@@ -415,6 +437,18 @@ def _insert_punto(cursor, punto: Dict):
 
 
 def _process_visita(cursor, visita_data: Dict, areas_df: pd.DataFrame, puntos_df: pd.DataFrame) -> int:
+    consultor_data = _get_consultor_data(cursor, visita_data.get("consultor_ist"))
+    if consultor_data:
+        visita_data["consultor_ist"] = consultor_data.get("email")
+        visita_data["consultor_cargo"] = consultor_data.get("cargo") or visita_data.get(
+            "consultor_cargo"
+        )
+        visita_data["consultor_zonal"] = consultor_data.get("zonal") or visita_data.get(
+            "consultor_zonal"
+        )
+        visita_data["consultor_nombre"] = consultor_data.get("name")
+        visita_data["consultor_name_complete"] = consultor_data.get("name_complete")
+
     visita_id = _insert_visita(cursor, visita_data)
 
     _insert_ev_ventilacion(
@@ -492,6 +526,7 @@ def _process_visita(cursor, visita_data: Dict, areas_df: pd.DataFrame, puntos_df
         area_data = _dict_from_row(row, area_cols)
         area_data["visita_id"] = visita_id
         area_data["centro_id"] = visita_data["cuv_visita"]
+        area_data["observaciones"] = area_data.get("observaciones") or area_data.get("uso")
         area_data = _compute_area_calculations(area_data, puntos_df)
         _insert_area(cursor, area_data)
 

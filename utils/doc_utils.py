@@ -551,7 +551,9 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
       - df_equipos: información de equipos de medición (tabla higiene_Equipos_Medicion)
     """
 
-    format_columns(df_visitas, ['nombre_personal_visita', 'consultor_ist'], mode="title")
+    format_columns(
+        df_visitas, ['nombre_personal_visita', 'consultor_name_complete'], mode="title"
+    )
     format_columns(df_visitas, 'cargo_personal_visita', mode="capitalize")
     format_columns(df_mediciones, ['nombre_area', 'sector_especifico', 'puesto_trabajo'], mode="capitalize")
 
@@ -623,7 +625,10 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
                 ("Hora actividad de terreno", row_visita.get('hora_visita', '')),
                 ("Temperatura ambiental exterior", temperatura_exterior),
                 ("Fecha emisión informe", "[COMPLETAR]"),
-                ("Profesional consultor/a de IST", row_visita.get('consultor_ist', '').lower().title()),
+                (
+                    "Profesional consultor/a de IST",
+                    row_visita.get('consultor_name_complete', '').lower().title(),
+                ),
                 ("Acompañante empresa", row_visita.get('nombre_personal_visita', '').lower().title()),
                 (
                     "Cargo de la persona que acompaña visita",
@@ -917,14 +922,22 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
     doc.add_paragraph()
     doc.add_paragraph()
 
+    consultor_nombre = ""
+    consultor_name_complete = ""
+    consultor_cargo = ""
+    consultor_zonal = ""
+
     if not df_visitas.empty:
         row_visita = df_visitas.iloc[0]
-        consultor_ist = row_visita.get("consultor_nombre", "")
+        consultor_nombre = row_visita.get("consultor_nombre", "")
+        consultor_name_complete = (
+            row_visita.get("consultor_name_complete") or consultor_nombre
+        )
         consultor_cargo = row_visita.get("consultor_cargo", "")
         consultor_zonal = row_visita.get("consultor_zonal", "")
 
     consultor_ist_limpio = (
-        consultor_ist
+        consultor_nombre
         .replace(" ", "-")
         .replace("ñ", "n")
         .replace("Ñ", "N")
@@ -950,7 +963,7 @@ def generar_informe_en_word(df_centros, df_visitas, df_mediciones, df_equipos) -
     # Agregar párrafo para el consultor, centrado y en negrita
     p_consultor = doc.add_paragraph()
     p_consultor.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run_consultor = p_consultor.add_run(consultor_ist)
+    run_consultor = p_consultor.add_run(consultor_name_complete)
     run_consultor.bold = True
 
     # Agregar párrafo para la profesión, centrado
@@ -1178,7 +1191,11 @@ def generar_informe_ventilacion_en_word(
     df_puntos = df_puntos.copy()
     df_equipos = df_equipos.copy()
 
-    format_columns(df_visitas, ["nombre_personal_visita", "consultor_ist", "consultor_zonal"], mode="title")
+    format_columns(
+        df_visitas,
+        ["nombre_personal_visita", "consultor_name_complete", "consultor_zonal"],
+        mode="title",
+    )
     if not df_areas.empty:
         format_columns(df_areas, ["nombre_area", "uso", "ventilacion_tipo", "ventilacion_estado"], mode="title")
 
@@ -1247,9 +1264,12 @@ def generar_informe_ventilacion_en_word(
                 ("Motivo de la actividad", motivo),
                 ("Fecha actividad de terreno", formatear_fecha(row_visita.get('fecha_visita', ''))),
                 ("Hora actividad de terreno", row_visita.get('hora_visita', '')),
-                ("Profesional consultor/a de IST", row_visita.get('consultor_ist', '').lower().title()),
+                (
+                    "Profesional consultor/a de IST",
+                    row_visita.get('consultor_nombre', '').lower().title(),
+                ),
                 ("Acompañante empresa", row_visita.get('nombre_personal_visita', '').lower().title()),
-                ("Cargo de la persona que acompaña la visita", row_visita.get('cargo_personal_visita', '')),
+                ("Cargo de la persona que acompaña la visita", row_visita.get('cargo_personal_visita', '').lower().title()),
                 ("Tipo de evaluación", row_visita.get('tipo_evaluacion', '').lower().title()),
                 ("Fecha emisión informe", "[COMPLETAR]"),
                 ("Revisor del informe", "Rodrigo Novoa"),
@@ -1659,14 +1679,22 @@ def generar_informe_ventilacion_en_word(
     doc.add_paragraph()
     doc.add_paragraph()
 
+    consultor_nombre = ""
+    consultor_name_complete = ""
+    consultor_cargo = ""
+    consultor_zonal = ""
+
     if not df_visitas.empty:
         row_visita = df_visitas.iloc[0]
-        consultor_ist = row_visita.get("consultor_nombre", "")
+        consultor_nombre = row_visita.get("consultor_nombre", "")
+        consultor_name_complete = (
+            row_visita.get("consultor_name_complete") or consultor_nombre
+        )
         consultor_cargo = row_visita.get("consultor_cargo", "")
         consultor_zonal = row_visita.get("consultor_zonal", "")
 
     consultor_ist_limpio = (
-        consultor_ist
+        consultor_nombre
         .replace(" ", "-")
         .replace("ñ", "n")
         .replace("Ñ", "N")
@@ -1694,7 +1722,7 @@ def generar_informe_ventilacion_en_word(
     # Agregar párrafo para el consultor, centrado y en negrita
     p_consultor = doc.add_paragraph()
     p_consultor.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run_consultor = p_consultor.add_run(consultor_ist)
+    run_consultor = p_consultor.add_run(consultor_name_complete)
     run_consultor.bold = True
 
     # Agregar párrafo para la profesión, centrado
