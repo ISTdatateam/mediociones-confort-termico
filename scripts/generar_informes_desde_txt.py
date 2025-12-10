@@ -28,7 +28,16 @@ from utils.helpers import (
     get_visita,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+LOG_FILE = Path(__file__).with_name("generar_informes_desde_txt.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+    ],
+)
 
 
 def _normalizar_tipo(valor: str) -> str:
@@ -330,6 +339,10 @@ def generar_informes(ids: Iterable[int], salida: Path, tipo: str = "auto") -> Li
         if ruta:
             logging.info("Informe guardado en %s", ruta)
             generados.append(ruta)
+        else:
+            logging.error(
+                "No se pudo generar el informe solicitado para la visita %s", id_visita
+            )
     return generados
 
 
