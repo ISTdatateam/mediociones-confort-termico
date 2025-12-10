@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
 def _normalizar_tipo(valor: str) -> str:
-    """Normaliza el tipo de informe eliminando acentos y espacios extra."""
+    """Normaliza el tipo de informe y mapea variantes a valores admitidos."""
 
     traducciones = str.maketrans(
         {
@@ -48,7 +48,18 @@ def _normalizar_tipo(valor: str) -> str:
             "Ú": "u",
         }
     )
-    return valor.strip().translate(traducciones).lower()
+    valor_normalizado = " ".join(valor.strip().translate(traducciones).lower().split())
+
+    if valor_normalizado in {"auto"}:
+        return "auto"
+
+    if "ventil" in valor_normalizado:
+        return "ventilacion"
+
+    if "confort" in valor_normalizado:
+        return "confort"
+
+    return valor_normalizado
 
 
 def _leer_ids_desde_txt(ruta_txt: Path) -> List[int]:
