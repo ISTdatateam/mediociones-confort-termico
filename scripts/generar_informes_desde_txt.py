@@ -274,7 +274,8 @@ def _generar_informe_ventilacion(
     carpeta_consultor = destino_base / _nombre_carpeta_consultor(df_visita)
     carpeta_consultor.mkdir(parents=True, exist_ok=True)
 
-    nombre_archivo = f"informe_ventilacion_cuv_{cuv}_visita_{id_visita}.docx"
+    nombre_archivo = f"informe_ventilacion_CECO_{cuv}_local_{df_centro['nombre_ct'].iloc[0]}.docx"
+
     ruta_archivo = carpeta_consultor / nombre_archivo
     with ruta_archivo.open("wb") as salida:
         salida.write(doc_bytes.getvalue())
