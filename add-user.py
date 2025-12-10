@@ -8,7 +8,7 @@ def poblar_usuarios():
     db_manager = MySQLDatabaseManager()
     usuarios = [
         {
-            "email": "Francisca.Lobos@ist.cl",
+            "email": "francisca.lobos@ist.cl",
             "pass": "password123",
             "name": "Francisca Lobos",
             "type": 1,
