@@ -1703,6 +1703,7 @@ def generar_informe_ventilacion_en_word(
         .replace("í", "i")
         .replace("ó", "o")
         .replace("ú", "u")
+        .replace("Á", "A")
     )
 
     firma_path = os.path.join("imagenes-firma", consultor_ist_limpio + ".png")
