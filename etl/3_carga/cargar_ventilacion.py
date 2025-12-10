@@ -315,6 +315,30 @@ def _compute_area_calculations(area: Dict, puntos_df: pd.DataFrame) -> Dict:
     return area
 
 
+def _normalize_area_strings(area: Dict) -> Dict:
+    """Normaliza texto descriptivo de áreas a formato título."""
+
+    string_fields = {
+        "codigo_area",
+        "nombre_area",
+        "uso",
+        "piso_nivel",
+        "ocupacion_habitual",
+        "ventilacion_tipo",
+        "ventilacion_sistema",
+        "ventilacion_estado",
+        "aberturas",
+        "observaciones",
+    }
+
+    for key in string_fields:
+        value = area.get(key)
+        if isinstance(value, str):
+            area[key] = value.strip().lower().title()
+
+    return area
+
+
 def _parse_date(value) -> Optional[date]:
     if pd.isna(value):
         return None
@@ -527,6 +551,7 @@ def _process_visita(cursor, visita_data: Dict, areas_df: pd.DataFrame, puntos_df
         area_data["visita_id"] = visita_id
         area_data["centro_id"] = visita_data["cuv_visita"]
         area_data["observaciones"] = area_data.get("observaciones") or area_data.get("uso")
+        area_data = _normalize_area_strings(area_data)
         area_data = _compute_area_calculations(area_data, puntos_df)
         _insert_area(cursor, area_data)
 

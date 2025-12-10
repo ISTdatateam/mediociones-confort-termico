@@ -138,10 +138,61 @@ def _generar_informe_ventilacion(
 
     df_equipos = get_equipos()
 
-    cumple_series = pd.to_numeric(
-        df_areas.get("m3_porpersona_cumple"), errors="coerce"
-    ).fillna(0)
-    areas_requieren_puntos = df_areas.loc[cumple_series.astype(int) == 0]
+    def _normalizar_cumplimiento(columna: str) -> Optional[pd.Series]:
+        if columna not in df_areas.columns:
+            return None
+
+        serie = df_areas.get(columna)
+        if serie is None:
+            return None
+
+        # Normaliza textos como "Cumple" / "No cumple" o valores booleanos/númericos.
+        texto_normalizado = (
+            serie.astype(str).str.strip().str.lower().replace({"sí": "si"})
+        )
+        mapa_cumple = {
+            "cumple": 1,
+            "si": 1,
+            "true": 1,
+            "1": 1,
+            "no cumple": 0,
+            "no": 0,
+            "false": 0,
+            "0": 0,
+        }
+        mapeado = texto_normalizado.map(mapa_cumple)
+
+        # Completa con intentos numéricos para valores no mapeados.
+        numerico = pd.to_numeric(serie, errors="coerce")
+        combinado = mapeado.combine_first(numerico)
+
+        if combinado.dropna().empty:
+            return None
+
+        # Mantiene los valores no informados como nulos para no exigir puntos innecesariamente.
+        return combinado.astype("Int64")
+
+    areas_requieren_puntos: pd.DataFrame
+    cumple_series: Optional[pd.Series] = None
+    for columna in ("m3_porpersona_cumple", "m3_persona", "m3_persona_cumple"):
+        cumple_series = _normalizar_cumplimiento(columna)
+        if cumple_series is not None:
+            if columna != "m3_porpersona_cumple":
+                logging.info(
+                    "Usando la columna %s para validar m3/persona en la visita %s.",
+                    columna,
+                    id_visita,
+                )
+            break
+
+    if cumple_series is None or cumple_series.dropna().empty:
+        logging.info(
+            "No se encontró una columna de cumplimiento m3/persona reconocible en la visita %s; se omite la validación de puntos requeridos.",
+            id_visita,
+        )
+        areas_requieren_puntos = pd.DataFrame()
+    else:
+        areas_requieren_puntos = df_areas.loc[cumple_series == 0]
 
     if not areas_requieren_puntos.empty:
         if df_puntos.empty:
@@ -164,16 +215,18 @@ def _generar_informe_ventilacion(
 
         if "area_id" in df_puntos.columns:
             puntos_por_area = df_puntos.groupby("area_id").size()
+            areas_sin_puntos = [
+                area_id
+                for area_id in areas_requieren_puntos.get(
+                    "area_id", pd.Series(dtype=int)
+                ).tolist()
+                if puntos_por_area.get(area_id, 0) == 0
+            ]
         else:
-            puntos_por_area = pd.Series(dtype=int)
-
-        areas_sin_puntos = [
-            area_id
-            for area_id in areas_requieren_puntos.get(
-                "area_id", pd.Series(dtype=int)
-            ).tolist()
-            if puntos_por_area.get(area_id, 0) == 0
-        ]
+            logging.info(
+                "No se encontró columna 'area_id' en puntos de medición; se omite la validación de puntos obligatorios."
+            )
+            areas_sin_puntos = []
 
         if areas_sin_puntos:
             nombres_faltantes = []
