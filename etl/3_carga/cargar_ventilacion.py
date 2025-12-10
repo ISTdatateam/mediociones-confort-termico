@@ -468,10 +468,28 @@ def _process_visita(cursor, visita_data: Dict, areas_df: pd.DataFrame, puntos_df
         "observaciones",
     ]
 
+    areas_df = areas_df.copy()
+    area_id_map: Dict[int, str] = {}
     for idx, row in areas_df.iterrows():
         area_data = _dict_from_row(row, area_cols)
         if not area_data.get("area_id"):
             area_data["area_id"] = f"{visita_id}-A{idx + 1}"
+        area_id_map[idx + 1] = area_data["area_id"]
+        areas_df.loc[idx, "area_id"] = area_data["area_id"]
+
+    if not puntos_df.empty:
+        puntos_df = puntos_df.copy()
+        if "area_idx" in puntos_df.columns:
+            puntos_df["area_id"] = puntos_df.apply(
+                lambda r: r.get("area_id")
+                or area_id_map.get(
+                    int(r["area_idx"]) if r.get("area_idx") not in (None, "") else None
+                ),
+                axis=1,
+            )
+
+    for idx, row in areas_df.iterrows():
+        area_data = _dict_from_row(row, area_cols)
         area_data["visita_id"] = visita_id
         area_data["centro_id"] = visita_data["cuv_visita"]
         area_data = _compute_area_calculations(area_data, puntos_df)
@@ -541,6 +559,51 @@ def _build_areas_from_wide_row(row: pd.Series) -> pd.DataFrame:
     return pd.DataFrame(areas)
 
 
+def _build_puntos_from_wide_row(row: pd.Series) -> pd.DataFrame:
+    puntos: List[Dict] = []
+
+    def _get_value(key: str):
+        return _clean_value(row.get(key))
+
+    for area_idx in range(1, 12):
+        if not _get_value(f"area_{area_idx}"):
+            continue
+
+        for tipo_prefix, tipo_punto in (("iny", "inyeccion"), ("ext", "extraccion")):
+            for punto_idx in range(1, 6):
+                ubicacion = _get_value(f"area_{area_idx}_{tipo_prefix}_{punto_idx}")
+                if not ubicacion:
+                    continue
+
+                punto: Dict = {
+                    "area_idx": area_idx,
+                    "codigo_punto": f"A{area_idx}-{tipo_prefix.upper()}{punto_idx}",
+                    "tipo_punto": tipo_punto,
+                    "ubicacion_detalle": ubicacion,
+                    "conducto_largo_cm": _to_float(
+                        _get_value(f"area_{area_idx}_{tipo_prefix}_largo_{punto_idx}")
+                    ),
+                    "conducto_ancho_cm": _to_float(
+                        _get_value(f"area_{area_idx}_{tipo_prefix}_ancho_{punto_idx}")
+                    ),
+                    "conducto_diametro": _to_float(
+                        _get_value(f"area_{area_idx}_{tipo_prefix}_diam_{punto_idx}")
+                    ),
+                }
+
+                for lectura_idx in range(1, 6):
+                    lectura = _to_float(
+                        _get_value(
+                            f"area_{area_idx}_{tipo_prefix}_vel_{punto_idx}_{lectura_idx}"
+                        )
+                    )
+                    punto[f"medicion_caudal_{lectura_idx}"] = lectura
+
+                puntos.append(punto)
+
+    return pd.DataFrame(puntos)
+
+
 def _parse_visita_row(row: pd.Series) -> Dict:
     visita_data = {
         "cuv_visita": _clean_value(row.get("cuv_visita")),
@@ -587,7 +650,7 @@ def cargar_archivo(ruta_excel: str) -> int:
             for _, row in resultados_df.iterrows():
                 visita_data = _parse_visita_row(row)
                 areas_df = _build_areas_from_wide_row(row)
-                puntos_df = pd.DataFrame()
+                puntos_df = _build_puntos_from_wide_row(row)
                 visita_id = _process_visita(cursor, visita_data, areas_df, puntos_df)
                 visitas_ids.append(visita_id)
         else:

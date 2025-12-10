@@ -1187,7 +1187,7 @@ def generar_informe_ventilacion_en_word(
     set_vertical_alignment(doc, section_index=0, alignment='top')
 
     configurar_encabezado(doc)
-    agregar_titulo_y_codigo(doc, "INFORME EVALUACIÓN VENTILACIÓN", "CODIGO: [COMPLETAR]")
+    agregar_titulo_y_codigo(doc, "INFORME EVALUACIÓN VENTILACIÓN", "CÓDIGO: [COMPLETAR]")
     # Centrar los dos últimos párrafos (título y código)
     for p in doc.paragraphs[-2:]:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1195,10 +1195,10 @@ def generar_informe_ventilacion_en_word(
 
     doc.add_heading("1. Antecedentes", level=2)
     doc.add_paragraph(
-        "Por solicitud del área de prevención de la empresa, se realiza la evaluación de provisión de aire de acuerdo con lo "
-        "establecido en el ArticuloN°34 del Decreto Supremo N°594/1999, realizando la evaluación de las condiciones de "
-        "ventilación en las áreas o sectores del centro de trabajo, de modo que la organización pueda implementar medidas "
-        "oportunas que resguarden la salud de las personas trabajadoras conforme al citado decreto."                                                                                                                  )
+        "Por solicitud del área de prevención de la empresa, se realiza la evaluación de ventilación de acuerdo con lo "
+        "establecido en el Artículo N°34 del Decreto Supremo N°594/1999, realizando la evaluación de las condiciones de ventilación en las "
+        "áreas o sectores del centro de trabajo, de modo que la organización pueda implementar medidas oportunas que "
+        "resguarden la salud de las personas trabajadoras conforme al citado decreto."                                                                                                                  )
     doc.add_paragraph()
 
     table_empresa = None
@@ -1215,7 +1215,7 @@ def generar_informe_ventilacion_en_word(
             [
                 ("Razón Social", row_centro.get('razon_social', '').lower().title()),
                 ("RUT", row_centro.get('rut', '')),
-                ("CIIU", '661909 - Otras actividades auxiliares de las actividades de servicios financieros n.c.p'),
+                ("CIIU", '471100 -  Venta al por menor en comercios de alimentos, bebidas o tabaco (supermercado)'),
             ],
         )
         set_column_width(table_empresa, 0, Cm(7))
@@ -1227,7 +1227,7 @@ def generar_informe_ventilacion_en_word(
             doc,
             "1.2 Información centro de trabajo",
             [
-                ("CUV / Código IST", row_centro.get('cuv', '')),
+                ("CUV/CECO/Código IST", row_centro.get('cuv', '')),
                 ("Nombre de Local", row_centro.get('nombre_ct', '').lower().title()),
                 ("Dirección", row_centro.get('direccion_ct', '')),
                 ("Comuna", row_centro.get('comuna_ct', '')),
@@ -1252,8 +1252,8 @@ def generar_informe_ventilacion_en_word(
                 ("Cargo de la persona que acompaña la visita", row_visita.get('cargo_personal_visita', '')),
                 ("Tipo de evaluación", row_visita.get('tipo_evaluacion', '').lower().title()),
                 ("Fecha emisión informe", "[COMPLETAR]"),
-                ("Revisor del informe", "Rodrigo Novoa Miranda"),
-                ("Destinatario informe", "[COMPLETAR]"),
+                ("Revisor del informe", "Rodrigo Novoa"),
+                ("Destinatario informe", "Cristian Fernandez"),
             ],
         )
         set_column_width(table_visita, 0, Cm(7))
