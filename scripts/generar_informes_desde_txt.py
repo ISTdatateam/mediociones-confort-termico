@@ -28,7 +28,7 @@ from utils.helpers import (
     get_visita,
 )
 
-LOG_FILE = Path(__file__).with_name("generar_informes_desde_txt.log")
+LOG_FILE = Path(__file__).with_name("generar_informes.txt")
 
 logging.basicConfig(
     level=logging.INFO,
