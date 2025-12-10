@@ -665,8 +665,14 @@ def _build_puntos_from_wide_row(row: pd.Series) -> pd.DataFrame:
 
 
 def _parse_visita_row(row: pd.Series) -> Dict:
+    cuv = _clean_value(row.get("cuv_visita"))
+    if cuv is None:
+        cuv = _clean_value(row.get("cuv"))
+    if cuv is None:
+        raise ValueError("El archivo no contiene la columna 'cuv_visita' o 'cuv' con un valor válido")
+
     visita_data = {
-        "cuv_visita": _clean_value(row.get("cuv_visita")),
+        "cuv_visita": cuv,
         "fecha_visita": _parse_date(_clean_value(row.get("fecha_de_visita"))),
         "hora_visita": _parse_time(_clean_value(row.get("horario_de_medicion"))),
         "motivo_evaluacion": None,
