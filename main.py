@@ -1,6 +1,7 @@
 import logging
 import streamlit as st
 import pandas as pd
+import numpy as np
 from datetime import date, datetime, time as dt_time, timedelta
 import time
 import os
@@ -130,6 +131,24 @@ def ensure_float(value, default=None):
             return default
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def ensure_int(value, default=None):
+    """Garantiza que los valores sean enteros válidos o retorna un ``default``."""
+    if value is None:
+        return default
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, Decimal):
+        return int(value)
+    if isinstance(value, str):
+        value = value.strip()
+        if value == "":
+            return default
+    try:
+        return int(float(value))
     except (TypeError, ValueError):
         return default
 
@@ -1261,7 +1280,7 @@ def mostrar_formularios_ventilacion():
                     "Personas presentes",
                     min_value=0,
                     step=1,
-                    value=int(punto_prefill.get("condiciones_ocupacion", 0)) if punto_prefill else 0,
+                    value=ensure_int(punto_prefill.get("condiciones_ocupacion"), 0) if punto_prefill else 0,
                     key="vent_punto_ocupacion",
                 )
                 puertas_opciones = ["No", "Sí"]
