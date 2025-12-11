@@ -190,6 +190,29 @@ AREA_FORM_WIDGET_KEYS = {
     "observaciones": "vent_area_observaciones",
 }
 VENT_AREA_FORM_PENDING_KEY = "vent_area_form_pending_updates"
+VENT_PUNTO_FORM_WIDGET_KEYS = {
+    "punto_id": "vent_punto_id",
+    "codigo_punto": "vent_punto_codigo",
+    "tipo_punto": "vent_punto_tipo",
+    "ubicacion_detalle": "vent_punto_ubicacion",
+    "altura_m": "vent_punto_altura",
+    "distancia_fuente_m": "vent_punto_distancia",
+    "conducto_largo_cm": "vent_punto_conducto_largo",
+    "conducto_ancho_cm": "vent_punto_conducto_ancho",
+    "conducto_diametro": "vent_punto_conducto_diametro",
+    "medicion_caudal_1": "vent_punto_vel_1",
+    "medicion_caudal_2": "vent_punto_vel_2",
+    "medicion_caudal_3": "vent_punto_vel_3",
+    "medicion_caudal_4": "vent_punto_vel_4",
+    "medicion_caudal_5": "vent_punto_vel_5",
+    "medicion_caudal_p": "vent_punto_vel_prom",
+    "condiciones_ocupacion": "vent_punto_ocupacion",
+    "puertas_ventanas_abiertas": "vent_punto_puertas",
+    "temperatura_c": "vent_punto_temp",
+    "humedad_relativa_pct": "vent_punto_humedad",
+    "croquis_url": "vent_punto_croquis",
+    "observaciones": "vent_punto_observaciones",
+}
 
 
 def _obtener_directorio_fotografias_area(visita_id, area_id):
@@ -279,6 +302,102 @@ def _cargar_area_en_formulario(area_data):
         AREA_FORM_WIDGET_KEYS["aforo_permitido"]: aforo_normalizado,
         AREA_FORM_WIDGET_KEYS["observaciones"]: area_data.get("observaciones", "") or "",
     }
+
+
+def _limpiar_estado_form_punto(mantener_area=None):
+    """Reinicia los valores del formulario de puntos de medición."""
+
+    if mantener_area is None:
+        st.session_state.pop("vent_punto_form_area", None)
+    else:
+        st.session_state["vent_punto_form_area"] = mantener_area
+
+    st.session_state.pop("vent_punto_en_edicion", None)
+    st.session_state.pop("vent_punto_form_last_id", None)
+    st.session_state["vent_punto_form_mode"] = "create"
+
+    for key in VENT_PUNTO_FORM_WIDGET_KEYS.values():
+        st.session_state.pop(key, None)
+
+    st.session_state.pop("vent_punto_fecha", None)
+    st.session_state.pop("vent_punto_hora", None)
+
+
+def _cargar_punto_en_formulario(punto_data):
+    """Carga los datos de un punto existente en el formulario de edición."""
+
+    if not punto_data:
+        _limpiar_estado_form_punto()
+        return
+
+    st.session_state["vent_punto_form_mode"] = "edit"
+    st.session_state["vent_punto_en_edicion"] = punto_data
+    st.session_state["vent_punto_form_area"] = punto_data.get("area_id")
+    st.session_state["vent_punto_form_last_id"] = punto_data.get("punto_id")
+
+    fecha_prefill, hora_prefill = _descomponer_fecha_hora(punto_data.get("fecha_hora"))
+
+    tipo_valor = (punto_data.get("tipo_punto") or "").strip().lower()
+    if tipo_valor.startswith("extra"):
+        tipo_normalizado = "Extraccion"
+    elif tipo_valor.startswith("inye") or tipo_valor.startswith("inyec"):
+        tipo_normalizado = "Inyeccion"
+    else:
+        tipo_normalizado = punto_data.get("tipo_punto", "Inyeccion") or "Inyeccion"
+
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["punto_id"]] = punto_data.get("punto_id", "")
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["codigo_punto"]] = punto_data.get("codigo_punto", "")
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["tipo_punto"]] = tipo_normalizado
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["ubicacion_detalle"]] = punto_data.get("ubicacion_detalle", "")
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["altura_m"]] = ensure_float(punto_data.get("altura_m"), 0.0) or 0.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["distancia_fuente_m"]] = ensure_float(
+        punto_data.get("distancia_fuente_m"), 0.0
+    ) or 0.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["conducto_largo_cm"]] = ensure_float(
+        punto_data.get("conducto_largo_cm"), 0.0
+    ) or 0.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["conducto_ancho_cm"]] = ensure_float(
+        punto_data.get("conducto_ancho_cm"), 0.0
+    ) or 0.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["conducto_diametro"]] = ensure_float(
+        punto_data.get("conducto_diametro"), 0.0
+    ) or 0.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["medicion_caudal_1"]] = ensure_float(
+        punto_data.get("medicion_caudal_1"), 0.0
+    ) or 0.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["medicion_caudal_2"]] = ensure_float(
+        punto_data.get("medicion_caudal_2"), 0.0
+    ) or 0.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["medicion_caudal_3"]] = ensure_float(
+        punto_data.get("medicion_caudal_3"), 0.0
+    ) or 0.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["medicion_caudal_4"]] = ensure_float(
+        punto_data.get("medicion_caudal_4"), 0.0
+    ) or 0.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["medicion_caudal_5"]] = ensure_float(
+        punto_data.get("medicion_caudal_5"), 0.0
+    ) or 0.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["medicion_caudal_p"]] = ensure_float(
+        punto_data.get("medicion_caudal_p"), 0.0
+    ) or 0.0
+
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["condiciones_ocupacion"]] = int(
+        punto_data.get("condiciones_ocupacion") or 0
+    )
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["puertas_ventanas_abiertas"]] = (
+        "Sí" if punto_data.get("puertas_ventanas_abiertas") in (1, "1", True, "True") else "No"
+    )
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["temperatura_c"]] = ensure_float(
+        punto_data.get("temperatura_c"), 20.0
+    ) or 20.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["humedad_relativa_pct"]] = ensure_float(
+        punto_data.get("humedad_relativa_pct"), 50.0
+    ) or 50.0
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["croquis_url"]] = punto_data.get("croquis_url", "")
+    st.session_state[VENT_PUNTO_FORM_WIDGET_KEYS["observaciones"]] = punto_data.get("observaciones", "")
+
+    st.session_state["vent_punto_fecha"] = fecha_prefill
+    st.session_state["vent_punto_hora"] = hora_prefill
 
 
 def _aplicar_pendientes_form_area():
@@ -1124,9 +1243,7 @@ def mostrar_formularios_ventilacion():
 
 
     if st.session_state.get("vent_punto_form_area") != area_seleccionada:
-        st.session_state["vent_punto_form_area"] = area_seleccionada
-        st.session_state.pop("vent_punto_en_edicion", None)
-        st.session_state["vent_punto_form_mode"] = "create"
+        _limpiar_estado_form_punto(area_seleccionada)
 
     puntos_area = st.session_state.get("vent_puntos", {}).get(area_seleccionada, [])
 
@@ -1141,17 +1258,23 @@ def mostrar_formularios_ventilacion():
         key="vent_punto_selector",
     )
 
+    punto_seleccionado = opciones_puntos.get(etiqueta_punto_sel)
+
+    if punto_seleccionado:
+        ultimo_cargado = st.session_state.get("vent_punto_form_last_id")
+        if ultimo_cargado != punto_seleccionado.get("punto_id"):
+            _cargar_punto_en_formulario(punto_seleccionado)
+    else:
+        _limpiar_estado_form_punto(area_seleccionada)
+
     col_punto_sel_1, col_punto_sel_2 = st.columns(2)
     with col_punto_sel_1:
-        if st.button("Cargar punto seleccionado", type="primary", disabled=opciones_puntos[etiqueta_punto_sel] is None):
-            st.session_state["vent_punto_en_edicion"] = opciones_puntos[etiqueta_punto_sel]
-            st.session_state["vent_punto_form_mode"] = "edit"
-            st.session_state["vent_punto_form_area"] = area_seleccionada
+        if st.button("Cargar punto seleccionado", type="primary", disabled=punto_seleccionado is None):
+            _cargar_punto_en_formulario(punto_seleccionado)
             st.rerun()
     with col_punto_sel_2:
         if st.button("Limpiar formulario", type="secondary"):
-            st.session_state.pop("vent_punto_en_edicion", None)
-            st.session_state["vent_punto_form_mode"] = "create"
+            _limpiar_estado_form_punto(area_seleccionada)
             st.rerun()
 
     area_en_foco = next((area for area in areas_guardadas if area["area_id"] == area_seleccionada), {})
@@ -1161,9 +1284,15 @@ def mostrar_formularios_ventilacion():
     if requiere_puntos:
         modo_punto = st.session_state.get("vent_punto_form_mode", "create")
         punto_prefill = st.session_state.get("vent_punto_en_edicion") if st.session_state.get("vent_punto_form_area") == area_seleccionada else None
+        if modo_punto == "edit" and punto_prefill:
+            ultimo_punto_cargado = st.session_state.get("vent_punto_form_last_id")
+            if ultimo_punto_cargado != punto_prefill.get("punto_id"):
+                _cargar_punto_en_formulario(punto_prefill)
         fecha_prefill, hora_prefill = _descomponer_fecha_hora(
             punto_prefill.get("fecha_hora") if punto_prefill else None
         )
+        fecha_prefill = st.session_state.get("vent_punto_fecha", fecha_prefill)
+        hora_prefill = st.session_state.get("vent_punto_hora", hora_prefill)
 
         st.markdown(
             "#### "
@@ -1176,16 +1305,22 @@ def mostrar_formularios_ventilacion():
             with col1:
                 punto_id = st.text_input(
                     "Identificador del punto (PuntoId)",
-                    value=(punto_prefill.get("punto_id") if punto_prefill else ""),
+                    value=st.session_state.get(
+                        "vent_punto_id", punto_prefill.get("punto_id") if punto_prefill else ""
+                    ),
                     key="vent_punto_id",
                 )
                 codigo_punto = st.text_input(
                     "Código del punto",
-                    value=(punto_prefill.get("codigo_punto") if punto_prefill else ""),
+                    value=st.session_state.get(
+                        "vent_punto_codigo", punto_prefill.get("codigo_punto") if punto_prefill else ""
+                    ),
                     key="vent_punto_codigo",
                 )
                 tipo_opciones = ["Inyeccion", "Extraccion"]
-                tipo_por_defecto = punto_prefill.get("tipo_punto") if punto_prefill else tipo_opciones[0]
+                tipo_por_defecto = st.session_state.get(
+                    "vent_punto_tipo", punto_prefill.get("tipo_punto") if punto_prefill else tipo_opciones[0]
+                )
                 tipo_punto = st.selectbox(
                     "Tipo de punto",
                     options=tipo_opciones,
@@ -1195,42 +1330,74 @@ def mostrar_formularios_ventilacion():
                 ubicacion_detalle = st.text_area(
                     "Ubicación y detalles",
                     height=80,
-                    value=(punto_prefill.get("ubicacion_detalle") if punto_prefill else ""),
+                    value=st.session_state.get(
+                        "vent_punto_ubicacion",
+                        punto_prefill.get("ubicacion_detalle") if punto_prefill else "",
+                    ),
                     key="vent_punto_ubicacion",
                 )
                 altura_m = st.number_input(
                     "Altura de medición (m)",
                     min_value=0.0,
                     step=0.1,
-                    value=ensure_float(punto_prefill.get("altura_m"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_altura", punto_prefill.get("altura_m") if punto_prefill else 0.0
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_altura",
                 )
                 distancia_fuente_m = st.number_input(
                     "Distancia a la fuente (m)",
                     min_value=0.0,
                     step=0.1,
-                    value=ensure_float(punto_prefill.get("distancia_fuente_m"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_distancia",
+                            punto_prefill.get("distancia_fuente_m") if punto_prefill else 0.0,
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_distancia",
                 )
                 conducto_largo_cm = st.number_input(
                     "Conducto largo (cm)",
                     min_value=0.0,
                     step=0.1,
-                    value=ensure_float(punto_prefill.get("conducto_largo_cm"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_conducto_largo",
+                            punto_prefill.get("conducto_largo_cm") if punto_prefill else 0.0,
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_conducto_largo",
                 )
                 conducto_ancho_cm = st.number_input(
                     "Conducto ancho (cm)",
                     min_value=0.0,
                     step=0.1,
-                    value=ensure_float(punto_prefill.get("conducto_ancho_cm"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_conducto_ancho",
+                            punto_prefill.get("conducto_ancho_cm") if punto_prefill else 0.0,
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_conducto_ancho",
                 )
                 conducto_diametro = st.number_input(
                     "Conducto diámetro (cm)",
                     min_value=0.0,
                     step=0.1,
-                    value=ensure_float(punto_prefill.get("conducto_diametro"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_conducto_diametro",
+                            punto_prefill.get("conducto_diametro") if punto_prefill else 0.0,
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_conducto_diametro",
                 )
             with col2:
@@ -1238,53 +1405,92 @@ def mostrar_formularios_ventilacion():
                     "Velocidad 1 (m/s)",
                     min_value=0.0,
                     step=0.01,
-                    value=ensure_float(punto_prefill.get("medicion_caudal_1"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_vel_1", punto_prefill.get("medicion_caudal_1") if punto_prefill else 0.0
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_vel_1",
                 )
                 medicion_caudal_2 = st.number_input(
                     "Velocidad 2 (m/s)",
                     min_value=0.0,
                     step=0.01,
-                    value=ensure_float(punto_prefill.get("medicion_caudal_2"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_vel_2", punto_prefill.get("medicion_caudal_2") if punto_prefill else 0.0
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_vel_2",
                 )
                 medicion_caudal_3 = st.number_input(
                     "Velocidad 3 (m/s)",
                     min_value=0.0,
                     step=0.01,
-                    value=ensure_float(punto_prefill.get("medicion_caudal_3"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_vel_3", punto_prefill.get("medicion_caudal_3") if punto_prefill else 0.0
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_vel_3",
                 )
                 medicion_caudal_4 = st.number_input(
                     "Velocidad 4 (m/s)",
                     min_value=0.0,
                     step=0.01,
-                    value=ensure_float(punto_prefill.get("medicion_caudal_4"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_vel_4", punto_prefill.get("medicion_caudal_4") if punto_prefill else 0.0
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_vel_4",
                 )
                 medicion_caudal_5 = st.number_input(
                     "Velocidad 5 (m/s)",
                     min_value=0.0,
                     step=0.01,
-                    value=ensure_float(punto_prefill.get("medicion_caudal_5"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_vel_5", punto_prefill.get("medicion_caudal_5") if punto_prefill else 0.0
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_vel_5",
                 )
                 medicion_caudal_p = st.number_input(
                     "Velocidad promedio (m/s)",
                     min_value=0.0,
                     step=0.01,
-                    value=ensure_float(punto_prefill.get("medicion_caudal_p"), 0.0) if punto_prefill else 0.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_vel_prom", punto_prefill.get("medicion_caudal_p") if punto_prefill else 0.0
+                        ),
+                        0.0,
+                    ),
                     key="vent_punto_vel_prom",
                 )
                 condiciones_ocupacion = st.number_input(
                     "Personas presentes",
                     min_value=0,
                     step=1,
-                    value=ensure_int(punto_prefill.get("condiciones_ocupacion"), 0) if punto_prefill else 0,
+                    value=int(
+                        st.session_state.get(
+                            "vent_punto_ocupacion", punto_prefill.get("condiciones_ocupacion", 0) if punto_prefill else 0
+                        )
+                    ),
                     key="vent_punto_ocupacion",
                 )
                 puertas_opciones = ["No", "Sí"]
-                puertas_default = "Sí" if punto_prefill and punto_prefill.get("puertas_ventanas_abiertas") in (1, "1", True, "True") else "No"
+                puertas_default = st.session_state.get(
+                    "vent_punto_puertas",
+                    "Sí"
+                    if punto_prefill and punto_prefill.get("puertas_ventanas_abiertas") in (1, "1", True, "True")
+                    else "No",
+                )
                 puertas_abiertas = st.selectbox(
                     "Puertas/ventanas abiertas",
                     options=puertas_opciones,
@@ -1295,7 +1501,12 @@ def mostrar_formularios_ventilacion():
                     "Temperatura ambiente (°C)",
                     min_value=-20.0,
                     max_value=60.0,
-                    value=ensure_float(punto_prefill.get("temperatura_c"), 20.0) if punto_prefill else 20.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_temp", punto_prefill.get("temperatura_c") if punto_prefill else 20.0
+                        ),
+                        20.0,
+                    ),
                     step=0.1,
                     key="vent_punto_temp",
                 )
@@ -1303,7 +1514,13 @@ def mostrar_formularios_ventilacion():
                     "Humedad relativa (%)",
                     min_value=0.0,
                     max_value=100.0,
-                    value=ensure_float(punto_prefill.get("humedad_relativa_pct"), 50.0) if punto_prefill else 50.0,
+                    value=ensure_float(
+                        st.session_state.get(
+                            "vent_punto_humedad",
+                            punto_prefill.get("humedad_relativa_pct") if punto_prefill else 50.0,
+                        ),
+                        50.0,
+                    ),
                     step=0.1,
                     key="vent_punto_humedad",
                 )
@@ -1319,13 +1536,17 @@ def mostrar_formularios_ventilacion():
                 )
                 croquis_punto = st.text_input(
                     "URL de apoyo (foto/croquis)",
-                    value=(punto_prefill.get("croquis_url") if punto_prefill else ""),
+                    value=st.session_state.get(
+                        "vent_punto_croquis", punto_prefill.get("croquis_url") if punto_prefill else ""
+                    ),
                     key="vent_punto_croquis",
                 )
                 observaciones_punto = st.text_area(
                     "Observaciones del punto",
                     height=80,
-                    value=(punto_prefill.get("observaciones") if punto_prefill else ""),
+                    value=st.session_state.get(
+                        "vent_punto_observaciones", punto_prefill.get("observaciones") if punto_prefill else ""
+                    ),
                     key="vent_punto_observaciones",
                 )
 
