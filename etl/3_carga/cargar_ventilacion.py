@@ -56,6 +56,67 @@ def _clean_value(value):
     return value
 
 
+def _reassign_bis_area_data(row: pd.Series) -> pd.Series:
+    """Reasigna información de columnas *_bis al área correspondiente.
+
+    En algunos archivos se completan los datos de un área en las columnas de
+    otra (por ejemplo, área_1_bis contiene los datos detallados de área_3).
+    Este helper detecta ese caso comparando el valor de ``area_x_bis`` con los
+    nombres declarados en ``area_y`` y copia los valores de ``area_x_*`` al
+    prefijo correcto ``area_y_*`` cuando el destino está vacío.
+    """
+
+    def _same_area_name(a: Optional[str], b: Optional[str]) -> bool:
+        if not a or not b:
+            return False
+        return str(a).strip().lower() == str(b).strip().lower()
+
+    row = row.copy()
+    area_names = {
+        idx: _clean_value(row.get(f"area_{idx}")) for idx in range(1, 12)
+    }
+
+    for src_idx in range(1, 12):
+        bis_value = _clean_value(row.get(f"area_{src_idx}_bis"))
+        if not bis_value:
+            continue
+
+        target_idx = next(
+            (idx for idx, name in area_names.items() if _same_area_name(name, bis_value)),
+            None,
+        )
+
+        if target_idx is None or target_idx == src_idx:
+            continue
+
+        target_bis_col = f"area_{target_idx}_bis"
+        if _clean_value(row.get(target_bis_col)) is None:
+            row[target_bis_col] = bis_value
+
+        row[f"area_{src_idx}_bis"] = None
+
+        src_prefix = f"area_{src_idx}_"
+        for col in list(row.index):
+            if not col.startswith(src_prefix):
+                continue
+
+            suffix = col[len(src_prefix) :]
+            if suffix == "bis":
+                continue
+
+            target_col = f"area_{target_idx}_{suffix}"
+            current_target = _clean_value(row.get(target_col))
+            src_value = _clean_value(row.get(col))
+
+            if current_target is None and src_value is not None:
+                row[target_col] = src_value
+
+            # Limpiar el origen para evitar duplicar puntos y descripciones
+            row[col] = None
+
+    return row
+
+
 def _get_consultor_data(cursor, consultor_email: Optional[str]) -> Optional[Dict[str, Optional[str]]]:
     if not consultor_email:
         return None
@@ -598,6 +659,7 @@ def _process_visita(cursor, visita_data: Dict, areas_df: pd.DataFrame, puntos_df
 
 
 def _build_areas_from_wide_row(row: pd.Series) -> pd.DataFrame:
+    row = _reassign_bis_area_data(row)
     areas: List[Dict] = []
     for idx in range(1, 12):
         name = _clean_value(row.get(f"area_{idx}"))
@@ -620,6 +682,7 @@ def _build_areas_from_wide_row(row: pd.Series) -> pd.DataFrame:
 
 
 def _build_puntos_from_wide_row(row: pd.Series) -> pd.DataFrame:
+    row = _reassign_bis_area_data(row)
     puntos: List[Dict] = []
 
     def _get_value(key: str):

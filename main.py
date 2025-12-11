@@ -1077,6 +1077,33 @@ def mostrar_formularios_ventilacion():
     area_seleccionada = area_options[etiqueta_area]
     st.session_state["vent_area_seleccionada"] = area_seleccionada
 
+    puntos_area = st.session_state.get("vent_puntos", {}).get(area_seleccionada, [])
+
+    if puntos_area:
+        df_puntos = pd.DataFrame(puntos_area)
+        columnas = [
+            "punto_id",
+            "codigo_punto",
+            "tipo_punto",
+            "seccion_conducto_cm2",
+            "medicion_caudal_p",
+            "caudal",
+            "fecha_hora",
+            "condiciones_ocupacion",
+            "puertas_ventanas_abiertas",
+        ]
+        columnas_disponibles = [col for col in columnas if col in df_puntos.columns]
+        df_vista = df_puntos[columnas_disponibles].copy()
+        if "puertas_ventanas_abiertas" in df_vista.columns:
+            df_vista["puertas_ventanas_abiertas"] = df_vista["puertas_ventanas_abiertas"].map({1: "Sí", 0: "No"})
+        st.dataframe(df_vista, width='stretch')
+    elif requiere_puntos:
+        st.info("El área seleccionada aún no tiene puntos registrados.")
+
+
+
+
+
     if st.session_state.get("vent_punto_form_area") != area_seleccionada:
         st.session_state["vent_punto_form_area"] = area_seleccionada
         st.session_state.pop("vent_punto_en_edicion", None)
@@ -1363,27 +1390,8 @@ def mostrar_formularios_ventilacion():
             else:
                 st.error("No fue posible guardar el punto de medición. Revisa los datos ingresados.")
 
-    puntos_area = st.session_state.get("vent_puntos", {}).get(area_seleccionada, [])
-    if puntos_area:
-        df_puntos = pd.DataFrame(puntos_area)
-        columnas = [
-            "punto_id",
-            "codigo_punto",
-            "tipo_punto",
-            "seccion_conducto_cm2",
-            "medicion_caudal_p",
-            "caudal",
-            "fecha_hora",
-            "condiciones_ocupacion",
-            "puertas_ventanas_abiertas",
-        ]
-        columnas_disponibles = [col for col in columnas if col in df_puntos.columns]
-        df_vista = df_puntos[columnas_disponibles].copy()
-        if "puertas_ventanas_abiertas" in df_vista.columns:
-            df_vista["puertas_ventanas_abiertas"] = df_vista["puertas_ventanas_abiertas"].map({1: "Sí", 0: "No"})
-        st.dataframe(df_vista, width='stretch')
-    elif requiere_puntos:
-        st.info("El área seleccionada aún no tiene puntos registrados.")
+
+
 
     st.markdown("---")
     st.subheader("Cierre")
