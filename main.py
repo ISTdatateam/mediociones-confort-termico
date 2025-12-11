@@ -1,7 +1,6 @@
 import logging
 import streamlit as st
 import pandas as pd
-import numpy as np
 from datetime import date, datetime, time as dt_time, timedelta
 import time
 import os
@@ -131,24 +130,6 @@ def ensure_float(value, default=None):
             return default
     try:
         return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def ensure_int(value, default=None):
-    """Garantiza que los valores sean enteros válidos o retorna un ``default``."""
-    if value is None:
-        return default
-    if isinstance(value, (int, np.integer)):
-        return int(value)
-    if isinstance(value, Decimal):
-        return int(value)
-    if isinstance(value, str):
-        value = value.strip()
-        if value == "":
-            return default
-    try:
-        return int(float(value))
     except (TypeError, ValueError):
         return default
 
@@ -398,6 +379,17 @@ def _cargar_punto_en_formulario(punto_data):
 
     st.session_state["vent_punto_fecha"] = fecha_prefill
     st.session_state["vent_punto_hora"] = hora_prefill
+
+
+def _manejar_cambio_punto(opciones_puntos, area_actual):
+    """Callback para sincronizar el formulario al cambiar el punto seleccionado."""
+
+    etiqueta = st.session_state.get("vent_punto_selector")
+    punto = opciones_puntos.get(etiqueta)
+    if punto:
+        _cargar_punto_en_formulario(punto)
+    else:
+        _limpiar_estado_form_punto(area_actual)
 
 
 def _aplicar_pendientes_form_area():
@@ -1256,6 +1248,8 @@ def mostrar_formularios_ventilacion():
         "Selecciona un punto para cargarlo y editarlo",
         options=list(opciones_puntos.keys()),
         key="vent_punto_selector",
+        on_change=_manejar_cambio_punto,
+        args=(opciones_puntos, area_seleccionada),
     )
 
     punto_seleccionado = opciones_puntos.get(etiqueta_punto_sel)
