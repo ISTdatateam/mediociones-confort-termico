@@ -1455,6 +1455,32 @@ def generar_informe_ventilacion_en_word(
                 for _, row in df_areas.iterrows()
             }
 
+        if 'tipo_punto' in df_puntos.columns and 'caudal' in df_puntos.columns:
+            df_puntos = df_puntos.copy()
+            df_puntos['caudal'] = pd.to_numeric(df_puntos['caudal'], errors='coerce')
+            max_caudal_por_tipo = (
+                df_puntos.groupby(['area_id', 'tipo_punto'], dropna=False)['caudal']
+                .max()
+                .reset_index()
+            )
+            max_caudal_por_tipo['tipo_priority'] = pd.Categorical(
+                max_caudal_por_tipo['tipo_punto'],
+                categories=["Inyeccion", "Extraccion"],
+                ordered=True,
+            )
+            max_caudal_por_tipo = max_caudal_por_tipo.sort_values(
+                by=['area_id', 'caudal', 'tipo_priority'],
+                ascending=[True, False, True],
+            )
+            tipo_elegido = (
+                max_caudal_por_tipo.drop_duplicates('area_id', keep='first')
+                .set_index('area_id')['tipo_punto']
+                .to_dict()
+            )
+            df_puntos = df_puntos.loc[
+                df_puntos['area_id'].map(tipo_elegido).eq(df_puntos['tipo_punto'])
+            ]
+
         df_puntos = df_puntos.sort_values(by=['area_id', 'codigo_punto']) if 'codigo_punto' in df_puntos.columns else df_puntos
 
         tabla_puntos = doc.add_table(rows=1, cols=8)
