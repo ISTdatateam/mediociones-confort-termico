@@ -1507,46 +1507,45 @@ def generar_informe_ventilacion_en_word(
 
             area_nombre = area_lookup.get(punto_dict.get('area_id'), punto_dict.get('area_id', ''))
             row_cells[0].text = str(area_nombre)
-            row_cells[1].text = tipo_map.get(punto_dict.get('tipo_punto'), punto_dict.get('tipo_punto', ''))
-            row_cells[2].text = format_decimal(punto_dict.get('caudal'))
+            row_cells[1].text = format_decimal(punto_dict.get('caudal'))
 
             area_info = area_info_lookup.get(punto_dict.get('area_id'), {})
             nmp = _f(area_info.get('aforo_permitido')) or _f(area_info.get('nmp')) or 0
-            row_cells[3].text = str(int(nmp)) if nmp and nmp == int(nmp) else (format_decimal(nmp) if nmp else "")
+            row_cells[2].text = str(int(nmp)) if nmp and nmp == int(nmp) else (format_decimal(nmp) if nmp else "")
 
             m3_pp_hora = _f(area_info.get('m3_porpersona_hora'))
-            row_cells[4].text = format_decimal(m3_pp_hora)
+            row_cells[3].text = format_decimal(m3_pp_hora)
 
             m3_pp_hora_ref = _f(area_info.get('m3_porpersona_hora_594')) or 20.0
             m3_pp_hora_eval = area_info.get('m3_porpersona_hora_cumple', None)
             if str(m3_pp_hora_eval) in ("1", "True", "true"):
-                row_cells[5].text = "CUMPLE"
+                row_cells[4].text = "CUMPLE"
             elif str(m3_pp_hora_eval) in ("0", "False", "false"):
-                row_cells[5].text = "NO CUMPLE"
+                row_cells[4].text = "NO CUMPLE"
             else:
-                row_cells[5].text = (
+                row_cells[4].text = (
                     "CUMPLE" if (m3_pp_hora is not None and m3_pp_hora >= m3_pp_hora_ref) else (
                         "NO CUMPLE" if m3_pp_hora is not None else ""
                     )
                 )
 
             recambio_hora = _f(area_info.get('recambio_hora'))
-            row_cells[6].text = format_decimal(recambio_hora)
+            row_cells[5].text = format_decimal(recambio_hora)
 
             recambio_min = _f(area_info.get('recambio_hora_594_min')) or 6.0
             recambio_max = _f(area_info.get('recambio_hora_594_max'))
             recambio_eval = area_info.get('recambio_hora_cumple', None)
             if str(recambio_eval) in ("1", "True", "true"):
-                row_cells[7].text = "CUMPLE"
+                row_cells[6].text = "CUMPLE"
             elif str(recambio_eval) in ("0", "False", "false"):
-                row_cells[7].text = "NO CUMPLE"
+                row_cells[6].text = "NO CUMPLE"
             else:
                 if recambio_hora is None:
-                    row_cells[7].text = ""
+                    row_cells[6].text = ""
                 else:
                     limite_max = recambio_max if recambio_max not in (None, 0) else 60.0
                     cumple_recambio = recambio_hora >= recambio_min and recambio_hora <= limite_max
-                    row_cells[7].text = "CUMPLE" if cumple_recambio else "NO CUMPLE"
+                    row_cells[6].text = "CUMPLE" if cumple_recambio else "NO CUMPLE"
 
         set_column_width(tabla_puntos, 0, Cm(3.5))
         set_column_width(tabla_puntos, 1, Cm(2.4))
@@ -1555,7 +1554,6 @@ def generar_informe_ventilacion_en_word(
         set_column_width(tabla_puntos, 4, Cm(2.6))
         set_column_width(tabla_puntos, 5, Cm(3.0))
         set_column_width(tabla_puntos, 6, Cm(2.8))
-        set_column_width(tabla_puntos, 7, Cm(3.2))
 
     else:
         doc.add_heading("3.2 Puntos de medición", level=3)

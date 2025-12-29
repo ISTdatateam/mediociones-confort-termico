@@ -1273,8 +1273,6 @@ def mostrar_formularios_ventilacion():
         ultimo_cargado = st.session_state.get("vent_punto_form_last_id")
         if ultimo_cargado != punto_seleccionado.get("punto_id"):
             _cargar_punto_en_formulario(punto_seleccionado)
-    else:
-        _limpiar_estado_form_punto(area_seleccionada)
 
     col_punto_sel_1, col_punto_sel_2 = st.columns(2)
     with col_punto_sel_1:
