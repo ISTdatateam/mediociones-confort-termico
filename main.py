@@ -1219,6 +1219,9 @@ def mostrar_formularios_ventilacion():
     area_seleccionada = area_options[etiqueta_area]
     st.session_state["vent_area_seleccionada"] = area_seleccionada
 
+    area_en_foco = next((area for area in areas_guardadas if area["area_id"] == area_seleccionada), {})
+    requiere_puntos = _requiere_puntos_medicion(area_en_foco)
+
     puntos_area = st.session_state.get("vent_puntos", {}).get(area_seleccionada, [])
 
     if puntos_area:
@@ -1282,9 +1285,6 @@ def mostrar_formularios_ventilacion():
         if st.button("Limpiar formulario", type="secondary"):
             _limpiar_estado_form_punto(area_seleccionada)
             st.rerun()
-
-    area_en_foco = next((area for area in areas_guardadas if area["area_id"] == area_seleccionada), {})
-    requiere_puntos = _requiere_puntos_medicion(area_en_foco)
 
     submit_punto = None
     if requiere_puntos:
