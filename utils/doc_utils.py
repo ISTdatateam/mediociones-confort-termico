@@ -1447,24 +1447,27 @@ def generar_informe_ventilacion_en_word(
         doc.add_heading("3.2 Puntos de medición", level=3)
 
         area_lookup = {}
+        area_info_lookup = {}
         if not df_areas.empty and 'area_id' in df_areas.columns:
             area_lookup = {row['area_id']: row.get('nombre_area', row['area_id']) for _, row in df_areas.iterrows()}
+            area_info_lookup = {
+                row['area_id']: row.to_dict()
+                for _, row in df_areas.iterrows()
+            }
 
         df_puntos = df_puntos.sort_values(by=['area_id', 'codigo_punto']) if 'codigo_punto' in df_puntos.columns else df_puntos
 
-        tabla_puntos = doc.add_table(rows=1, cols=10)
+        tabla_puntos = doc.add_table(rows=1, cols=8)
         tabla_puntos.style = 'Table Grid'
         headers_puntos = [
             "Área",
-            "Código",
             "Tipo",
-            "Velocidad prom. (m/s)",
-            "Sección (cm²)",
             "Caudal (m³/h)",
-            "Ocupación",
-            "Aberturas",
-            "Fecha/Hora",
-            "Observaciones",
+            "Número máximo de personas\n(NMP) en el área y/o sector",
+            "Metros cúbicos por persona y por hora",
+            "Evaluación estándar de ventilación D.S. N° 594.\nDe 20 metros cúbicos por persona por hora\nCUMPLE/ NO CUMPLE",
+            "Cambios de aire por hora",
+            "Evaluación estándar de ventilación D.S. N° 594.\nDe 6 hasta 60 cambios de aire por hora\nCUMPLE/ NO CUMPLE",
         ]
         for idx, texto in enumerate(headers_puntos):
             tabla_puntos.cell(0, idx).text = texto
@@ -1478,42 +1481,56 @@ def generar_informe_ventilacion_en_word(
 
             area_nombre = area_lookup.get(punto_dict.get('area_id'), punto_dict.get('area_id', ''))
             row_cells[0].text = str(area_nombre)
-            row_cells[1].text = str(punto_dict.get('codigo_punto', '') or '')
-            row_cells[2].text = tipo_map.get(punto_dict.get('tipo_punto'), punto_dict.get('tipo_punto', ''))
-            row_cells[3].text = format_decimal(punto_dict.get('medicion_caudal_p'))
-            row_cells[4].text = format_decimal(punto_dict.get('seccion_conducto_cm2'))
-            row_cells[5].text = format_decimal(punto_dict.get('caudal'))
-            row_cells[6].text = str(punto_dict.get('condiciones_ocupacion', '') or '')
-            aberturas = punto_dict.get('puertas_ventanas_abiertas')
-            if aberturas in (1, '1', True):
-                row_cells[7].text = "Sí"
-            elif aberturas in (0, '0', False):
-                row_cells[7].text = "No"
-            else:
-                row_cells[7].text = ""
+            row_cells[1].text = tipo_map.get(punto_dict.get('tipo_punto'), punto_dict.get('tipo_punto', ''))
+            row_cells[2].text = format_decimal(punto_dict.get('caudal'))
 
-            fecha_hora = punto_dict.get('fecha_hora')
-            if isinstance(fecha_hora, datetime):
-                row_cells[8].text = fecha_hora.strftime("%d-%m-%Y %H:%M")
-            elif isinstance(fecha_hora, date):
-                row_cells[8].text = fecha_hora.strftime("%d-%m-%Y")
-            elif fecha_hora:
-                row_cells[8].text = str(fecha_hora)
-            else:
-                row_cells[8].text = ""
+            area_info = area_info_lookup.get(punto_dict.get('area_id'), {})
+            nmp = _f(area_info.get('aforo_permitido')) or _f(area_info.get('nmp')) or 0
+            row_cells[3].text = str(int(nmp)) if nmp and nmp == int(nmp) else (format_decimal(nmp) if nmp else "")
 
-            row_cells[9].text = str(punto_dict.get('observaciones', '') or '')
+            m3_pp_hora = _f(area_info.get('m3_porpersona_hora'))
+            row_cells[4].text = format_decimal(m3_pp_hora)
+
+            m3_pp_hora_ref = _f(area_info.get('m3_porpersona_hora_594')) or 20.0
+            m3_pp_hora_eval = area_info.get('m3_porpersona_hora_cumple', None)
+            if str(m3_pp_hora_eval) in ("1", "True", "true"):
+                row_cells[5].text = "CUMPLE"
+            elif str(m3_pp_hora_eval) in ("0", "False", "false"):
+                row_cells[5].text = "NO CUMPLE"
+            else:
+                row_cells[5].text = (
+                    "CUMPLE" if (m3_pp_hora is not None and m3_pp_hora >= m3_pp_hora_ref) else (
+                        "NO CUMPLE" if m3_pp_hora is not None else ""
+                    )
+                )
+
+            recambio_hora = _f(area_info.get('recambio_hora'))
+            row_cells[6].text = format_decimal(recambio_hora)
+
+            recambio_min = _f(area_info.get('recambio_hora_594_min')) or 6.0
+            recambio_max = _f(area_info.get('recambio_hora_594_max'))
+            recambio_eval = area_info.get('recambio_hora_cumple', None)
+            if str(recambio_eval) in ("1", "True", "true"):
+                row_cells[7].text = "CUMPLE"
+            elif str(recambio_eval) in ("0", "False", "false"):
+                row_cells[7].text = "NO CUMPLE"
+            else:
+                if recambio_hora is None:
+                    row_cells[7].text = ""
+                else:
+                    limite_max = recambio_max if recambio_max not in (None, 0) else 60.0
+                    cumple_recambio = recambio_hora >= recambio_min and recambio_hora <= limite_max
+                    row_cells[7].text = "CUMPLE" if cumple_recambio else "NO CUMPLE"
 
         set_column_width(tabla_puntos, 0, Cm(3.5))
-        set_column_width(tabla_puntos, 1, Cm(2.2))
-        set_column_width(tabla_puntos, 2, Cm(2.5))
-        set_column_width(tabla_puntos, 3, Cm(2.8))
-        set_column_width(tabla_puntos, 4, Cm(2.5))
-        set_column_width(tabla_puntos, 5, Cm(2.8))
-        set_column_width(tabla_puntos, 6, Cm(2.5))
-        set_column_width(tabla_puntos, 7, Cm(2.5))
-        set_column_width(tabla_puntos, 8, Cm(3.2))
-        set_column_width(tabla_puntos, 9, Cm(4.5))
+        set_column_width(tabla_puntos, 1, Cm(2.4))
+        set_column_width(tabla_puntos, 2, Cm(2.6))
+        set_column_width(tabla_puntos, 3, Cm(2.6))
+        set_column_width(tabla_puntos, 4, Cm(2.6))
+        set_column_width(tabla_puntos, 5, Cm(3.0))
+        set_column_width(tabla_puntos, 6, Cm(2.8))
+        set_column_width(tabla_puntos, 7, Cm(3.2))
+
     else:
         doc.add_heading("3.2 Puntos de medición", level=3)
         requiere_mediciones = False
