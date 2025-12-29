@@ -1541,15 +1541,31 @@ def generar_informe_ventilacion_en_word(
     mostrar_anexo_equipos = True
 
     if not df_areas.empty and 'nombre_area' in df_areas.columns:
+        otros_indicadores_medidos = False
+        if "m3_porpersona_hora" in df_areas.columns:
+            otros_indicadores_medidos = (
+                pd.to_numeric(df_areas["m3_porpersona_hora"], errors="coerce")
+                .fillna(0)
+                .gt(0)
+                .any()
+            )
+        if not otros_indicadores_medidos and "recambio_hora" in df_areas.columns:
+            otros_indicadores_medidos = (
+                pd.to_numeric(df_areas["recambio_hora"], errors="coerce")
+                .fillna(0)
+                .gt(0)
+                .any()
+            )
+
         if 'm3_porpersona_cumple' in df_areas.columns:
             areas_m3_no = df_areas.loc[df_areas['m3_porpersona_cumple'] == 0, 'nombre_area'].tolist()
             areas_m3_si = df_areas.loc[df_areas['m3_porpersona_cumple'] == 1, 'nombre_area'].tolist()
             mostrar_anexo_equipos = len(areas_m3_no) > 0
-        if 'm3_porpersona_hora_cumple' in df_areas.columns and (not df_puntos.empty):
+        if 'm3_porpersona_hora_cumple' in df_areas.columns and otros_indicadores_medidos:
             areas_m3_h_no = df_areas.loc[df_areas['m3_porpersona_hora_cumple'] == 0, 'nombre_area'].tolist()
         else:
             areas_m3_h_no = []
-        if 'recambio_hora_cumple' in df_areas.columns and (not df_puntos.empty):
+        if 'recambio_hora_cumple' in df_areas.columns and otros_indicadores_medidos:
             areas_recambio_no = df_areas.loc[df_areas['recambio_hora_cumple'] == 0, 'nombre_area'].tolist()
         else:
             areas_recambio_no = []
@@ -1566,9 +1582,23 @@ def generar_informe_ventilacion_en_word(
 
     # ¿Existen datos reales (no vacíos) para otros indicadores?
     cols_otras = ["m3_porpersona_hora_cumple", "recambio_hora_cumple"]
-    # Consideramos que solo hay medición de m³/persona·h y recambios si hubo puntos de medición.
-    puntos_medidos = not df_puntos.empty
-    otros_indicadores_medidos = puntos_medidos
+    # Consideramos que los otros indicadores fueron medidos cuando existen valores > 0.
+    otros_indicadores_medidos = False
+    if not df_areas.empty:
+        if "m3_porpersona_hora" in df_areas.columns:
+            otros_indicadores_medidos = (
+                pd.to_numeric(df_areas["m3_porpersona_hora"], errors="coerce")
+                .fillna(0)
+                .gt(0)
+                .any()
+            )
+        if not otros_indicadores_medidos and "recambio_hora" in df_areas.columns:
+            otros_indicadores_medidos = (
+                pd.to_numeric(df_areas["recambio_hora"], errors="coerce")
+                .fillna(0)
+                .gt(0)
+                .any()
+            )
 
     cumplen_m3 = todas_cumplen_m3(df_areas)
     areas_cumplen_texto = ', '.join(areas_m3_si) if areas_m3_si else 'evaluadas'
@@ -1586,7 +1616,8 @@ def generar_informe_ventilacion_en_word(
     else:
         # Resumen general sin forzar la mención de indicadores que no se midieron
         doc.add_paragraph(
-            f"Durante la visita se evaluaron {total_areas} áreas con condiciones de ventilación registradas."
+            f"Acorde a los resultados alcanzados, las áreas: {areas_cumplen_texto} cumplen con lo establecido en el Decreto Supremo "
+            "N° 594/99 del MINSAL respecto del volumen mínimo de aire disponible por persona (10 m³ por persona)."
         )
 
         # 1) m³ por persona (siempre que exista la evaluación de m³/persona)
