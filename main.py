@@ -1406,6 +1406,18 @@ def mostrar_formularios_ventilacion():
                     ),
                     key="vent_punto_conducto_diametro",
                 )
+                seccion_cm2 = 0.0
+                if conducto_diametro > 0:
+                    seccion_cm2 = math.pi * (conducto_diametro / 2) ** 2
+                elif conducto_largo_cm > 0 and conducto_ancho_cm > 0:
+                    seccion_cm2 = conducto_largo_cm * conducto_ancho_cm
+                st.number_input(
+                    "Sección conducto (cm²)",
+                    min_value=0.0,
+                    step=0.1,
+                    value=seccion_cm2,
+                    disabled=True,
+                )
             with col2:
                 medicion_caudal_1 = st.number_input(
                     "Velocidad 1 (m/s)",
@@ -1467,17 +1479,22 @@ def mostrar_formularios_ventilacion():
                     ),
                     key="vent_punto_vel_5",
                 )
+                velocidades = [
+                    medicion_caudal_1,
+                    medicion_caudal_2,
+                    medicion_caudal_3,
+                    medicion_caudal_4,
+                    medicion_caudal_5,
+                ]
+                velocidades_validas = [v for v in velocidades if v > 0]
+                medicion_caudal_p = sum(velocidades_validas) / len(velocidades_validas) if velocidades_validas else 0.0
                 medicion_caudal_p = st.number_input(
                     "Velocidad promedio (m/s)",
                     min_value=0.0,
                     step=0.01,
-                    value=ensure_float(
-                        st.session_state.get(
-                            "vent_punto_vel_prom", punto_prefill.get("medicion_caudal_p") if punto_prefill else 0.0
-                        ),
-                        0.0,
-                    ),
+                    value=medicion_caudal_p,
                     key="vent_punto_vel_prom",
+                    disabled=True,
                 )
                 condiciones_ocupacion = st.number_input(
                     "Personas presentes",
@@ -1579,13 +1596,7 @@ def mostrar_formularios_ventilacion():
                 medicion_caudal_5,
             ]
             velocidades_validas = [v for v in velocidades if v > 0]
-            velocidad_promedio = medicion_caudal_p if medicion_caudal_p > 0 else (sum(velocidades_validas) / len(velocidades_validas) if velocidades_validas else 0)
-
-            seccion_cm2 = None
-            if conducto_diametro > 0:
-                seccion_cm2 = math.pi * (conducto_diametro / 2) ** 2
-            elif conducto_largo_cm > 0 and conducto_ancho_cm > 0:
-                seccion_cm2 = conducto_largo_cm * conducto_ancho_cm
+            velocidad_promedio = sum(velocidades_validas) / len(velocidades_validas) if velocidades_validas else 0
 
             caudal = None
             if velocidad_promedio > 0 and seccion_cm2:
