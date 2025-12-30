@@ -1325,18 +1325,18 @@ def generar_informe_ventilacion_en_word(
         tabla_areas.style = 'Table Grid'
 
         # Anchos de columnas
-        set_column_width(tabla_areas, 0, Cm(3))  # Área
-        set_column_width(tabla_areas, 1, Cm(3))  # NMP
+        set_column_width(tabla_areas, 0, Cm(4))  # Área
+        set_column_width(tabla_areas, 1, Cm(2.5))  # NMP
         set_column_width(tabla_areas, 2, Cm(0.8))  # Largo
         set_column_width(tabla_areas, 3, Cm(0.8))  # Ancho
         set_column_width(tabla_areas, 4, Cm(0.8))  # Alto
-        set_column_width(tabla_areas, 5, Cm(1.5))  # m³ sector
-        set_column_width(tabla_areas, 6, Cm(1.5))  # m³/persona
-        set_column_width(tabla_areas, 7, Cm(4))  # Evaluación
+        set_column_width(tabla_areas, 5, Cm(2))  # m³ sector
+        set_column_width(tabla_areas, 6, Cm(2))  # m³/persona
+        set_column_width(tabla_areas, 7, Cm(3))  # Evaluación
 
         # --- Alturas exactas de filas (encabezados) ---
         # Fila 0: títulos (incluye la celda fusionada "Dimensiones del recinto evaluado")
-        tabla_areas.rows[0].height = Cm(2)
+        tabla_areas.rows[0].height = Cm(1)
         tabla_areas.rows[0].height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
 
         # Fila 1: subtítulos (Largo, Ancho, Alto)
@@ -1346,11 +1346,11 @@ def generar_informe_ventilacion_en_word(
         # Encabezado fila 0
         hdr0 = tabla_areas.rows[0].cells
         hdr0[0].text = "Área y/o sector"
-        hdr0[1].text = "Número máximo de personas\n(NMP) en el área y/o sector"
+        hdr0[1].text = "Número máximo de personas (NMP)"
         hdr0[2].text = "Dimensiones del recinto evaluado"
         hdr0[5].text = "Metros cúbicos del sector (m³)"
         hdr0[6].text = "Metros cúbicos por persona"
-        hdr0[7].text = "Evaluación estándar de ventilación D.S. N° 594\n10 metros cúbicos por persona\nCUMPLE/NO CUMPLE"
+        hdr0[7].text = "Evaluación estándar metros cúbicos por persona (*)"
 
         # Encabezado fila 1 (subtítulos de Dimensiones)
         hdr1 = tabla_areas.rows[1].cells
@@ -1442,6 +1442,11 @@ def generar_informe_ventilacion_en_word(
                     p.alignment = _WDA.LEFT if j == 0 else _WDA.CENTER
 
     doc.add_paragraph()
+    doc.add_paragraph(
+        "(*) D.S. N° 594 establece un estándar de ventilación de al menos 10 metros cúbicos por persona."
+    )
+    doc.add_paragraph()
+
 
     if not df_puntos.empty:
         doc.add_heading("3.2 Puntos de medición", level=3)
@@ -1483,23 +1488,20 @@ def generar_informe_ventilacion_en_word(
 
         df_puntos = df_puntos.sort_values(by=['area_id', 'codigo_punto']) if 'codigo_punto' in df_puntos.columns else df_puntos
 
-        tabla_puntos = doc.add_table(rows=1, cols=8)
+        tabla_puntos = doc.add_table(rows=1, cols=7)
         tabla_puntos.style = 'Table Grid'
         headers_puntos = [
             "Área",
-            "Tipo",
             "Caudal (m³/h)",
             "Número máximo de personas\n(NMP) en el área y/o sector",
             "Metros cúbicos por persona y por hora",
-            "Evaluación estándar de ventilación D.S. N° 594.\nDe 20 metros cúbicos por persona por hora\nCUMPLE/ NO CUMPLE",
+            "Evaluación estándar metros cúbicos por persona y por hora (+)",
             "Cambios de aire por hora",
-            "Evaluación estándar de ventilación D.S. N° 594.\nDe 6 hasta 60 cambios de aire por hora\nCUMPLE/ NO CUMPLE",
+            "Evaluación estándar cambios de aire por hora (++)",
         ]
         for idx, texto in enumerate(headers_puntos):
             tabla_puntos.cell(0, idx).text = texto
         format_row(tabla_puntos.rows[0])
-
-        tipo_map = {"Inyeccion": "Inyección", "Extraccion": "Extracción"}
 
         for _, punto in df_puntos.iterrows():
             punto_dict = punto.to_dict()
@@ -1547,13 +1549,13 @@ def generar_informe_ventilacion_en_word(
                     cumple_recambio = recambio_hora >= recambio_min and recambio_hora <= limite_max
                     row_cells[6].text = "CUMPLE" if cumple_recambio else "NO CUMPLE"
 
-        set_column_width(tabla_puntos, 0, Cm(3.5))
-        set_column_width(tabla_puntos, 1, Cm(2.4))
-        set_column_width(tabla_puntos, 2, Cm(2.6))
-        set_column_width(tabla_puntos, 3, Cm(2.6))
-        set_column_width(tabla_puntos, 4, Cm(2.6))
-        set_column_width(tabla_puntos, 5, Cm(3.0))
-        set_column_width(tabla_puntos, 6, Cm(2.8))
+        set_column_width(tabla_puntos, 0, Cm(4))
+        set_column_width(tabla_puntos, 1, Cm(2.3))
+        set_column_width(tabla_puntos, 2, Cm(2.3))
+        set_column_width(tabla_puntos, 3, Cm(2.3))
+        set_column_width(tabla_puntos, 4, Cm(3))
+        set_column_width(tabla_puntos, 5, Cm(2.3))
+        set_column_width(tabla_puntos, 6, Cm(2.3))
 
     else:
         doc.add_heading("3.2 Puntos de medición", level=3)
@@ -1571,6 +1573,11 @@ def generar_informe_ventilacion_en_word(
                 "Todas las áreas evaluadas cumplen con la referencia de m³/persona, por lo que no fue necesario registrar puntos de medición."
             )
 
+    doc.add_paragraph()
+    doc.add_paragraph(
+        "(+)  D.S. N° 594 establece un estándar de ventilación de al menos 20 metros cúbicos por persona por hora.\n"
+        "(++) D.S. N° 594 establece un estándar de ventilación de 6 a 60 cambios de aire por hora."
+    )
     doc.add_paragraph()
 
     total_areas = len(df_areas) if not df_areas.empty else 0
