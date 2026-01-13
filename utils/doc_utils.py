@@ -1327,12 +1327,12 @@ def generar_informe_ventilacion_en_word(
         # Anchos de columnas
         set_column_width(tabla_areas, 0, Cm(4))  # Área
         set_column_width(tabla_areas, 1, Cm(2.5))  # NMP
-        set_column_width(tabla_areas, 2, Cm(0.8))  # Largo
-        set_column_width(tabla_areas, 3, Cm(0.8))  # Ancho
-        set_column_width(tabla_areas, 4, Cm(0.8))  # Alto
+        set_column_width(tabla_areas, 2, Cm(0.5))  # Largo
+        set_column_width(tabla_areas, 3, Cm(0.5))  # Ancho
+        set_column_width(tabla_areas, 4, Cm(0.5))  # Alto
         set_column_width(tabla_areas, 5, Cm(2))  # m³ sector
         set_column_width(tabla_areas, 6, Cm(2))  # m³/persona
-        set_column_width(tabla_areas, 7, Cm(3))  # Evaluación
+        set_column_width(tabla_areas, 7, Cm(3.2))  # Evaluación
 
         # --- Alturas exactas de filas (encabezados) ---
         # Fila 0: títulos (incluye la celda fusionada "Dimensiones del recinto evaluado")
@@ -1493,7 +1493,7 @@ def generar_informe_ventilacion_en_word(
         headers_puntos = [
             "Área",
             "Caudal (m³/h)",
-            "Número máximo de personas\n(NMP) en el área y/o sector",
+            "Número máximo de personas (NMP)",
             "Metros cúbicos por persona y por hora",
             "Evaluación estándar metros cúbicos por persona y por hora (+)",
             "Cambios de aire por hora",
@@ -1575,7 +1575,8 @@ def generar_informe_ventilacion_en_word(
 
     doc.add_paragraph()
     doc.add_paragraph(
-        "(+)  D.S. N° 594 establece un estándar de ventilación de al menos 20 metros cúbicos por persona por hora.\n"
+        "(+) "
+        "D.S. N° 594 establece un estándar de ventilación de al menos 20 metros cúbicos por persona por hora.\n"
         "(++) D.S. N° 594 establece un estándar de ventilación de 6 a 60 cambios de aire por hora."
     )
     doc.add_paragraph()
@@ -1589,41 +1590,65 @@ def generar_informe_ventilacion_en_word(
     mostrar_anexo_equipos = True
 
     if not df_areas.empty and 'nombre_area' in df_areas.columns:
-        otros_indicadores_medidos = False
-        if "m3_porpersona_hora" in df_areas.columns:
-            otros_indicadores_medidos = (
-                pd.to_numeric(df_areas["m3_porpersona_hora"], errors="coerce")
-                .fillna(0)
-                .gt(0)
-                .any()
-            )
-        if not otros_indicadores_medidos and "recambio_hora" in df_areas.columns:
-            otros_indicadores_medidos = (
-                pd.to_numeric(df_areas["recambio_hora"], errors="coerce")
-                .fillna(0)
-                .gt(0)
-                .any()
-            )
-
+        # 1) Evaluación base: m3_porpersona (aplica a todas las áreas)
         if 'm3_porpersona_cumple' in df_areas.columns:
             areas_m3_no = df_areas.loc[df_areas['m3_porpersona_cumple'] == 0, 'nombre_area'].tolist()
             areas_m3_si = df_areas.loc[df_areas['m3_porpersona_cumple'] == 1, 'nombre_area'].tolist()
             mostrar_anexo_equipos = len(areas_m3_no) > 0
-        if 'm3_porpersona_hora_cumple' in df_areas.columns and otros_indicadores_medidos:
-            areas_m3_h_no = df_areas.loc[df_areas['m3_porpersona_hora_cumple'] == 0, 'nombre_area'].tolist()
         else:
-            areas_m3_h_no = []
-        if 'recambio_hora_cumple' in df_areas.columns and otros_indicadores_medidos:
-            areas_recambio_no = df_areas.loc[df_areas['recambio_hora_cumple'] == 0, 'nombre_area'].tolist()
-        else:
-            areas_recambio_no = []
+            areas_m3_no, areas_m3_si = [], []
 
-        # Consolidar un listado general de áreas que presentan algún incumplimiento.
+        # 2) Subconjunto: SOLO áreas que NO cumplen m3_porpersona
+        df_areas_m3_no = df_areas.loc[
+            df_areas.get('m3_porpersona_cumple', pd.Series(index=df_areas.index)).eq(0)].copy()
+
+        # 3) Detectar si hay medición de indicadores alternativos SOLO en ese subconjunto
+        otros_indicadores_medidos = False
+        if not df_areas_m3_no.empty:
+            if "m3_porpersona_hora" in df_areas_m3_no.columns:
+                otros_indicadores_medidos = (
+                    pd.to_numeric(df_areas_m3_no["m3_porpersona_hora"], errors="coerce")
+                    .fillna(0)
+                    .gt(0)
+                    .any()
+                )
+            if not otros_indicadores_medidos and "recambio_hora" in df_areas_m3_no.columns:
+                otros_indicadores_medidos = (
+                    pd.to_numeric(df_areas_m3_no["recambio_hora"], errors="coerce")
+                    .fillna(0)
+                    .gt(0)
+                    .any()
+                )
+
+        # 4) Evaluar incumplimientos de indicadores alternativos SOLO en áreas_m3_no
+        if otros_indicadores_medidos and not df_areas_m3_no.empty:
+            if 'm3_porpersona_hora_cumple' in df_areas_m3_no.columns:
+                areas_m3_h_no = df_areas_m3_no.loc[
+                    df_areas_m3_no['m3_porpersona_hora_cumple'] == 0, 'nombre_area'
+                ].tolist()
+                areas_m3_h_si = df_areas_m3_no.loc[
+                    df_areas_m3_no['m3_porpersona_hora_cumple'] == 1, 'nombre_area'
+                ].tolist()
+            else:
+                areas_m3_h_no, areas_m3_h_si = [], []
+
+            if 'recambio_hora_cumple' in df_areas_m3_no.columns:
+                areas_recambio_no = df_areas_m3_no.loc[
+                    df_areas_m3_no['recambio_hora_cumple'] == 0, 'nombre_area'
+                ].tolist()
+                areas_recambio_si = df_areas_m3_no.loc[
+                    df_areas_m3_no['recambio_hora_cumple'] == 1, 'nombre_area'
+                ].tolist()
+            else:
+                areas_recambio_no, areas_recambio_si = [], []
+        else:
+            areas_m3_h_no, areas_m3_h_si = [], []
+            areas_recambio_no, areas_recambio_si = [],[]
+
+        # Consolidar un listado general de áreas con algún incumplimiento
         areas_no_cumplen = sorted(
             {*(areas_m3_no or []), *(areas_m3_h_no or []), *(areas_recambio_no or [])}
         )
-
-
 
     # --- CONCLUSIONES ajustadas a la lógica: se omitirá m³/persona·h y recambios si no se midieron ---
     doc.add_heading("4. Conclusiones", level=2)
@@ -1664,19 +1689,14 @@ def generar_informe_ventilacion_en_word(
     else:
         # Resumen general sin forzar la mención de indicadores que no se midieron
         doc.add_paragraph(
-            f"Acorde a los resultados alcanzados, las áreas: {areas_cumplen_texto} cumplen con lo establecido en el Decreto Supremo "
+            f"Acorde a los resultados alcanzados (Tabla 3.1), las áreas: {areas_cumplen_texto} cumplen con lo establecido en el Decreto Supremo "
             "N° 594/99 del MINSAL respecto del volumen mínimo de aire disponible por persona (10 m³ por persona)."
         )
 
         # 1) m³ por persona (siempre que exista la evaluación de m³/persona)
         if areas_m3_no:
             doc.add_paragraph(
-                f"El indicador de volumen por persona (10 m³/persona) no cumple en: {', '.join(areas_m3_no)}."
-            )
-        elif not otros_indicadores_medidos:
-            # Si no hay otros indicadores medidos y no hay incumplimientos de m³/persona, cerramos aquí sin mencionar m³/h ni recambios
-            doc.add_paragraph(
-                "El indicador de volumen por persona cumple el criterio normativo establecido para las áreas revisadas."
+                f"El volumen por persona (10 m³/persona) no se cumple en: {', '.join(areas_m3_no)},  por lo cual se realizaron evaluaciones adicionales."
             )
 
         # 2) Solo mencionar m³/persona·h y recambios si efectivamente se midieron (algún dato no nulo)
@@ -1690,9 +1710,10 @@ def generar_informe_ventilacion_en_word(
                     f"El recambio de aire por hora es inferior al criterio normativo en: {', '.join(areas_recambio_no)}."
                 )
             # Si todos los indicadores medidos cumplen (y hubo otros además de m³/persona), puedes cerrar con un consolidado:
-            if (not areas_m3_no) and (not areas_m3_h_no) and (not areas_recambio_no):
+            if areas_m3_h_si and areas_recambio_si:
                 doc.add_paragraph(
-                    "Los indicadores evaluados cumplen los criterios normativos establecidos para las áreas revisadas."
+                    f"Acorde a los resultados alcanzados (Tabla 3.2), las áreas: {', '.join(areas_m3_h_si)} cumplen con lo establecido en el Decreto Supremo "
+                    "N° 594/99 del MINSAL respecto del de m3/persona hora y de cambios de aire."
                 )
 
     # --- NUEVO: prescripciones administrativas en tabla (reemplaza '5. Recomendaciones') ---
